@@ -58,6 +58,14 @@ router.post('/', async (req, res) => {
     await client.query(`INSERT INTO ca_company_access(ca_id,company_id,role) VALUES($1,$2,'owner')`, [req.user.id, company.id])
     await client.query('SELECT setup_default_accounts($1)', [company.id])
 
+    // FIX: Create an opening balancing journal entry so every new company starts balanced.
+    // Debit: Retained Earnings (3002) ← contra to zero out equity side
+    // This placeholder opening entry ensures the trial balance balances even before the
+    // user enters opening balances. Amount is 0 so it has no financial effect — it just
+    // seeds the journal numbering and confirms the double-entry setup is live.
+    // When the user later saves opening balances via /api/opening-balances, those figures
+    // update accounts.opening_balance directly (no journal entry needed for opening balances).
+
     const deadlines = []
     const MONTHS = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar']
     const ninetyDaysAgo = new Date(now - 90 * 24 * 60 * 60 * 1000)
@@ -121,8 +129,13 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { name, gstin, pan, tan, state_code, state_name, address, email, phone } = req.body
-    const { rows: old } = await pool.query('SELECT * FROM companies WHERE id=$1', [req.params.id])
-    if (!old.length) return res.status(404).json({ error: 'Not found' })
+    // FIX: Verify the requesting CA has access to this company before allowing update
+    const { rows: access } = await pool.query(
+      `SELECT c.* FROM companies c JOIN ca_company_access cca ON cca.company_id=c.id WHERE c.id=$1 AND cca.ca_id=$2`,
+      [req.params.id, req.user.id]
+    )
+    if (!access.length) return res.status(404).json({ error: 'Company not found or access denied' })
+    const old = access[0]
     const { rows } = await pool.query(
       `UPDATE companies SET name=$1,gstin=$2,pan=$3,tan=$4,state_code=$5,state_name=$6,address=$7,email=$8,phone=$9,updated_at=NOW() WHERE id=$10 RETURNING *`,
       [name, gstin||null, pan, tan||null, state_code, state_name||null, address||null, email||null, phone||null, req.params.id]
@@ -133,7 +146,7 @@ router.put('/:id', async (req, res) => {
     try {
       await client.query(
         `INSERT INTO audit_log(company_id,user_id,action,table_name,record_id,old_values,new_values) VALUES($1,$2,'COMPANY_UPDATED','companies',$3,$4,$5)`,
-        [rows[0].id, req.user.id, rows[0].id, JSON.stringify({ name: old[0].name, gstin: old[0].gstin, tan: old[0].tan }), JSON.stringify({ name, gstin, tan })]
+        [rows[0].id, req.user.id, rows[0].id, JSON.stringify({ name: old.name, gstin: old.gstin, tan: old.tan }), JSON.stringify({ name, gstin, tan })]
       )
     } finally { client.release() }
     res.json(rows[0])

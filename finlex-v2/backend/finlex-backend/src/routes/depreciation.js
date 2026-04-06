@@ -65,7 +65,13 @@ router.get('/schedule', (req, res) => res.redirect(307, `/api/depreciation/sched
 // GET /api/depreciation/schedules/:id/preview — full schedule table
 router.get('/schedules/:id/preview', async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM fixed_assets WHERE id=$1', [req.params.id])
+    // FIX: Validate CA has access to the company this asset belongs to
+    const { rows } = await pool.query(
+      `SELECT fa.* FROM fixed_assets fa
+       JOIN ca_company_access cca ON cca.company_id=fa.company_id
+       WHERE fa.id=$1 AND cca.ca_id=$2`,
+      [req.params.id, req.user.id]
+    )
     if (!rows.length) return res.status(404).json({ error: 'Asset not found' })
     const asset = rows[0]
 
@@ -117,6 +123,12 @@ router.post('/schedules', async (req, res) => {
     return res.status(400).json({ error: 'useful_life_years required for SLM method' })
   if (method === 'WDV' && !wdv_rate)
     return res.status(400).json({ error: 'wdv_rate required for WDV method' })
+
+  // FIX: Verify CA has access to this company
+  const { rows: access } = await pool.query(
+    'SELECT 1 FROM ca_company_access WHERE ca_id=$1 AND company_id=$2', [req.user.id, company_id]
+  )
+  if (!access.length) return res.status(403).json({ error: 'Access denied to this company' })
 
   try {
     const { rows } = await pool.query(

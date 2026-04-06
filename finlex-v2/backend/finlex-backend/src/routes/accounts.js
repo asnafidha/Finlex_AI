@@ -43,6 +43,11 @@ router.post('/', async (req, res) => {
   const { company_id, code, name, type, sub_type, parent_id, opening_balance } = req.body
   if (!company_id || !code || !name || !type)
     return res.status(400).json({ error: 'company_id, code, name, type required' })
+  // FIX: Verify CA has access to this company
+  const { rows: access } = await pool.query(
+    'SELECT 1 FROM ca_company_access WHERE ca_id=$1 AND company_id=$2', [req.user.id, company_id]
+  )
+  if (!access.length) return res.status(403).json({ error: 'Access denied to this company' })
   try {
     const { rows } = await pool.query(
       `INSERT INTO accounts(company_id,code,name,type,sub_type,parent_id,opening_balance)
@@ -60,11 +65,35 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   const { name, sub_type, opening_balance } = req.body
   try {
-    const { rows } = await pool.query(
-      `UPDATE accounts SET name=$1,sub_type=$2,opening_balance=$3 WHERE id=$4 AND is_system=false RETURNING *`,
-      [name, sub_type||null, opening_balance||0, req.params.id]
+    // FIX: Validate that the account belongs to a company the CA has access to
+    // FIX: Allow opening_balance to be updated on ALL accounts (including system),
+    //      but only allow name/sub_type changes on non-system accounts
+    const { rows: accRows } = await pool.query(
+      `SELECT a.* FROM accounts a
+       JOIN ca_company_access cca ON cca.company_id=a.company_id
+       WHERE a.id=$1 AND cca.ca_id=$2`,
+      [req.params.id, req.user.id]
     )
-    if (!rows.length) return res.status(404).json({ error: 'Account not found or is a system account' })
+    if (!accRows.length) return res.status(404).json({ error: 'Account not found or access denied' })
+    const account = accRows[0]
+
+    let rows
+    if (account.is_system) {
+      // System accounts: ONLY opening_balance can be updated (name/sub_type are locked)
+      const result = await pool.query(
+        `UPDATE accounts SET opening_balance=$1 WHERE id=$2 RETURNING *`,
+        [parseFloat(opening_balance) || 0, req.params.id]
+      )
+      rows = result.rows
+    } else {
+      // Non-system accounts: all three fields can be updated
+      const result = await pool.query(
+        `UPDATE accounts SET name=$1,sub_type=$2,opening_balance=$3 WHERE id=$4 RETURNING *`,
+        [name, sub_type||null, parseFloat(opening_balance) || 0, req.params.id]
+      )
+      rows = result.rows
+    }
+    if (!rows.length) return res.status(404).json({ error: 'Account not found' })
     res.json(rows[0])
   } catch (err) { res.status(500).json({ error: err.message }) }
 })

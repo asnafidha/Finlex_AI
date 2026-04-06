@@ -22,9 +22,15 @@ router.get('/', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
+// FIX: Validate that journal entry belongs to a company the CA has access to
 router.get('/:id', async (req, res) => {
   try {
-    const je = await pool.query('SELECT * FROM journal_entries WHERE id=$1', [req.params.id])
+    const je = await pool.query(
+      `SELECT je.* FROM journal_entries je
+       JOIN ca_company_access cca ON cca.company_id=je.company_id
+       WHERE je.id=$1 AND cca.ca_id=$2`,
+      [req.params.id, req.user.id]
+    )
     if (!je.rows.length) return res.status(404).json({ error: 'Journal entry not found' })
     const lines = await pool.query(
       `SELECT jel.*, a.name as account_name, a.code as account_code
@@ -42,6 +48,12 @@ router.post('/', async (req, res) => {
   const { company_id, entry_date, narration, lines } = req.body
   if (!company_id || !entry_date || !narration || !lines?.length)
     return res.status(400).json({ error: 'company_id, entry_date, narration, lines required' })
+
+  // FIX: Verify CA has access to company_id
+  const { rows: access } = await pool.query(
+    'SELECT 1 FROM ca_company_access WHERE ca_id=$1 AND company_id=$2', [req.user.id, company_id]
+  )
+  if (!access.length) return res.status(403).json({ error: 'Access denied to this company' })
 
   const totalDebit  = lines.reduce((s, l) => s + (parseFloat(l.debit_amount)  || 0), 0)
   const totalCredit = lines.reduce((s, l) => s + (parseFloat(l.credit_amount) || 0), 0)
@@ -63,6 +75,14 @@ router.post('/', async (req, res) => {
       [company_id, entryNum, entry_date, narration, req.user.id]
     )
     for (const line of lines) {
+      // FIX: Validate that each account_id belongs to the same company
+      const accCheck = await client.query(
+        'SELECT id FROM accounts WHERE id=$1 AND company_id=$2', [line.account_id, company_id]
+      )
+      if (!accCheck.rows.length) {
+        await client.query('ROLLBACK')
+        return res.status(400).json({ error: `Account id ${line.account_id} does not belong to this company` })
+      }
       await client.query(
         `INSERT INTO journal_entry_lines(journal_entry_id,account_id,debit_amount,credit_amount,narration) VALUES($1,$2,$3,$4,$5)`,
         [je.rows[0].id, line.account_id, line.debit_amount||0, line.credit_amount||0, line.narration||null]

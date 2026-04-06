@@ -23,7 +23,13 @@ router.get('/', async (req, res) => {
 // GET /api/credit-notes/:id
 router.get('/:id', async (req, res) => {
   try {
-    const note = await pool.query('SELECT * FROM credit_debit_notes WHERE id=$1', [req.params.id])
+    // FIX: Validate CA has access to the company this note belongs to
+    const note = await pool.query(
+      `SELECT n.* FROM credit_debit_notes n
+       JOIN ca_company_access cca ON cca.company_id=n.company_id
+       WHERE n.id=$1 AND cca.ca_id=$2`,
+      [req.params.id, req.user.id]
+    )
     if (!note.rows.length) return res.status(404).json({ error: 'Note not found' })
     const items = await pool.query('SELECT * FROM credit_debit_note_items WHERE note_id=$1', [req.params.id])
     res.json({ ...note.rows[0], items: items.rows })

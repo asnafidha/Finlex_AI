@@ -34,7 +34,13 @@ router.get('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const inv = await pool.query('SELECT * FROM invoices WHERE id=$1', [req.params.id])
+    // FIX: Validate CA has access to the company this invoice belongs to
+    const inv = await pool.query(
+      `SELECT i.* FROM invoices i
+       JOIN ca_company_access cca ON cca.company_id=i.company_id
+       WHERE i.id=$1 AND cca.ca_id=$2`,
+      [req.params.id, req.user.id]
+    )
     if (!inv.rows.length) return res.status(404).json({ error: 'Invoice not found' })
     const items = await pool.query('SELECT * FROM invoice_items WHERE invoice_id=$1', [req.params.id])
     res.json({ ...inv.rows[0], items: items.rows })
@@ -262,11 +268,18 @@ async function createJournal(client, companyId, invoice, cgst, sgst, igst, userI
 
   if (isSale) {
     const receivable  = await getAcc('1003')
+    const tdsReceiv   = await getAcc('1007')
     const salesRev    = await getAcc('4001')
     const cgstPayable = await getAcc('2002')
     const sgstPayable = await getAcc('2003')
     const igstPayable = await getAcc('2004')
-    await addLine(receivable, invoice.total_amount, 0, 'Accounts Receivable')
+    // FIX: When buyer deducts TDS on a sale, AR is reduced and TDS Receivable is debited
+    if (tdsAmount > 0) {
+      await addLine(receivable, invoice.total_amount - tdsAmount, 0, 'Accounts Receivable (net of TDS)')
+      await addLine(tdsReceiv,  tdsAmount, 0, `TDS Receivable u/s ${tdsSection||'194'}`)
+    } else {
+      await addLine(receivable, invoice.total_amount, 0, 'Accounts Receivable')
+    }
     await addLine(salesRev,   0, invoice.subtotal, 'Sales Revenue')
     if (cgst > 0) await addLine(cgstPayable, 0, cgst, 'CGST Payable')
     if (sgst > 0) await addLine(sgstPayable, 0, sgst, 'SGST Payable')
