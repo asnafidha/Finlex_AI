@@ -11,9 +11,14 @@ router.get('/trial-balance', async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT a.code, a.name, a.type,
+              COALESCE(a.opening_balance, 0) AS opening_balance,
               COALESCE(SUM(jel.debit_amount),0)  AS total_debit,
               COALESCE(SUM(jel.credit_amount),0) AS total_credit,
-              COALESCE(SUM(jel.debit_amount),0) - COALESCE(SUM(jel.credit_amount),0) AS balance
+              CASE
+                WHEN a.type IN ('asset','expense')
+                THEN COALESCE(a.opening_balance,0) + COALESCE(SUM(jel.debit_amount),0) - COALESCE(SUM(jel.credit_amount),0)
+                ELSE COALESCE(a.opening_balance,0) + COALESCE(SUM(jel.credit_amount),0) - COALESCE(SUM(jel.debit_amount),0)
+              END AS balance
        FROM accounts a
        LEFT JOIN journal_entry_lines jel ON jel.account_id=a.id
        LEFT JOIN journal_entries je ON je.id=jel.journal_entry_id
@@ -21,13 +26,21 @@ router.get('/trial-balance', async (req, res) => {
          AND ($2::date IS NULL OR je.entry_date >= $2)
          AND ($3::date IS NULL OR je.entry_date <= $3)
        WHERE a.company_id=$1
-       GROUP BY a.id,a.code,a.name,a.type
-       HAVING COALESCE(SUM(jel.debit_amount),0)!=0 OR COALESCE(SUM(jel.credit_amount),0)!=0
+       GROUP BY a.id,a.code,a.name,a.type,a.opening_balance
+       HAVING COALESCE(a.opening_balance,0)!=0
+           OR COALESCE(SUM(jel.debit_amount),0)!=0
+           OR COALESCE(SUM(jel.credit_amount),0)!=0
        ORDER BY a.code`,
       [company_id, from||null, to||null]
     )
-    const total_debit  = rows.reduce((s,r) => s + parseFloat(r.total_debit),  0)
-    const total_credit = rows.reduce((s,r) => s + parseFloat(r.total_credit), 0)
+    // For trial balance: debit-nature accounts (asset, expense) show debit when positive
+    // credit-nature accounts (liability, equity, revenue) show credit when positive
+    const debitAccounts  = rows.filter(r => ['asset','expense'].includes(r.type))
+    const creditAccounts = rows.filter(r => ['liability','equity','revenue'].includes(r.type))
+    const total_debit  = debitAccounts.reduce((s,r) => s + Math.max(0, parseFloat(r.balance)), 0)
+                       + creditAccounts.reduce((s,r) => s + Math.max(0, -parseFloat(r.balance)), 0)
+    const total_credit = creditAccounts.reduce((s,r) => s + Math.max(0, parseFloat(r.balance)), 0)
+                       + debitAccounts.reduce((s,r) => s + Math.max(0, -parseFloat(r.balance)), 0)
     res.json({ accounts: rows, total_debit, total_credit, is_balanced: Math.abs(total_debit - total_credit) < 0.01 })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
@@ -52,8 +65,10 @@ router.get('/pl', async (req, res) => {
     )
     const revenue  = rows.filter(r => r.type === 'revenue')
     const expenses = rows.filter(r => r.type === 'expense')
+    // Revenue: credit_amount - debit_amount (positive = income)
+    // Expense: debit_amount - credit_amount (positive = expense) — do NOT use Math.abs, preserve sign for reversals
     const total_revenue  = revenue.reduce((s,r) => s + parseFloat(r.amount), 0)
-    const total_expenses = expenses.reduce((s,r) => s + Math.abs(parseFloat(r.amount)), 0)
+    const total_expenses = expenses.reduce((s,r) => s + (-parseFloat(r.amount)), 0) // amount = credit-debit, negate for expenses
     const net_profit = total_revenue - total_expenses
     res.json({ revenue, expenses, total_revenue, total_expenses, net_profit, is_profit: net_profit >= 0 })
   } catch (err) { res.status(500).json({ error: err.message }) }
@@ -98,8 +113,13 @@ router.get('/balance-sheet', async (req, res) => {
     const equity            = rows.filter(r => r.type === 'equity')
     const total_assets      = assets.reduce((s,r) => s + parseFloat(r.closing_balance), 0)
     const total_liabilities = liabilities.reduce((s,r) => s + parseFloat(r.closing_balance), 0)
-    const total_equity      = equity.reduce((s,r) => s + parseFloat(r.closing_balance), 0) + net_profit
-    res.json({ assets, liabilities, equity, net_profit, total_assets, total_liabilities, total_equity, is_balanced: Math.abs(total_assets-(total_liabilities+total_equity))<0.01 })
+    const total_equity_accounts = equity.reduce((s,r) => s + parseFloat(r.closing_balance), 0)
+    // Net profit is added to equity to show total equity including current year P&L
+    // Only add net_profit once — equity accounts do NOT already contain current year P&L
+    // (P&L is closed to retained earnings only at year-end via closing entries)
+    const total_equity = total_equity_accounts + net_profit
+    res.json({ assets, liabilities, equity, net_profit, total_assets, total_liabilities, total_equity,
+      is_balanced: Math.abs(total_assets - (total_liabilities + total_equity)) < 0.01 })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 

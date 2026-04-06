@@ -45,8 +45,9 @@ function generateInsights(pl, complianceData, invoiceData, actionsList) {
   const insights = []
   if (pl) {
     const profit   = parseFloat(pl.net_profit || 0)
-    const revenue  = parseFloat(pl.total_revenue || 0)
-    const expenses = parseFloat(pl.total_expenses || 0)
+    const revenue  = parseFloat(pl.total_revenue || 0)   // excl. GST — from revenue accounts
+    const expenses = parseFloat(pl.total_expenses || 0)  // from expense accounts
+
     if (profit < 0) {
       insights.push({ Icon: TrendingDown, text: `Loss of ${fmtK(Math.abs(profit))} — expenses exceed revenue`, color: '#dc2626', bg: '#fef2f2' })
     } else if (revenue > 0) {
@@ -144,10 +145,39 @@ export default function Dashboard({ setPage }) {
   const criticalCount     = actionSummary?.critical || 0
 
   const statCards = [
-    { label: 'Revenue', value: fmtK(compInvoices.total_revenue || 0), sub: `${compInvoices.total_sales || 0} invoices raised`, Icon: TrendingUp, color: '#3b82f6', bg: '#eff6ff' },
-    { label: 'Net Profit', value: fmtK(pl?.net_profit || 0), sub: (pl?.net_profit || 0) >= 0 ? 'Profitable period' : 'Expenses exceed revenue', Icon: (pl?.net_profit || 0) >= 0 ? TrendingUp : TrendingDown, color: (pl?.net_profit || 0) >= 0 ? '#10b981' : '#dc2626', bg: (pl?.net_profit || 0) >= 0 ? '#ecfdf5' : '#fef2f2' },
-    { label: unpaidAmt > 0 ? `${fmtK(unpaidAmt)} receivable` : 'Receivables', value: unpaidAmt > 0 ? `${compInvoices.unpaid_invoices || 0} unpaid` : 'All paid', sub: unpaidAmt > 0 ? 'Cash not yet collected' : 'No outstanding invoices', Icon: CreditCard, color: unpaidAmt > 0 ? '#f59e0b' : '#10b981', bg: unpaidAmt > 0 ? '#fffbeb' : '#ecfdf5' },
-    { label: 'Compliance', value: `${activeCompanyData?.compliance_score || 0}/100`, sub: parseInt(compCompliance.overdue || 0) > 0 ? `${compCompliance.overdue} overdue — penalty risk` : 'All filings on track', Icon: parseInt(compCompliance.overdue || 0) > 0 ? AlertCircle : Shield, color: (activeCompanyData?.compliance_score || 0) >= 80 ? '#10b981' : '#f59e0b', bg: (activeCompanyData?.compliance_score || 0) >= 80 ? '#ecfdf5' : '#fffbeb' },
+    {
+      // Use PL revenue (excl GST) so it matches Net Profit calculation
+      label: 'Revenue',
+      value: fmtK(pl?.total_revenue || 0),
+      sub:   `${compInvoices.total_sales || 0} invoices raised`,
+      Icon: TrendingUp, color: '#3b82f6', bg: '#eff6ff'
+    },
+    {
+      label: 'Net Profit',
+      value: fmtK(pl?.net_profit || 0),
+      sub:   (pl?.net_profit || 0) >= 0 ? 'Profitable period' : 'Expenses exceed revenue',
+      Icon: (pl?.net_profit || 0) >= 0 ? TrendingUp : TrendingDown,
+      color: (pl?.net_profit || 0) >= 0 ? '#10b981' : '#dc2626',
+      bg:    (pl?.net_profit || 0) >= 0 ? '#ecfdf5' : '#fef2f2'
+    },
+    {
+      label: unpaidAmt > 0 ? `${fmtK(unpaidAmt)} receivable` : 'Receivables',
+      value: unpaidAmt > 0 ? `${compInvoices.unpaid_invoices || 0} unpaid` : 'All paid',
+      sub:   unpaidAmt > 0 ? 'Cash not yet collected' : 'No outstanding invoices',
+      Icon: CreditCard,
+      color: unpaidAmt > 0 ? '#f59e0b' : '#10b981',
+      bg:    unpaidAmt > 0 ? '#fffbeb' : '#ecfdf5'
+    },
+    {
+      label: 'Compliance',
+      value: `${activeCompanyData?.compliance_score || 0}/100`,
+      sub:   parseInt(compCompliance.overdue || 0) > 0
+        ? `${compCompliance.overdue} overdue — penalty risk`
+        : 'All filings on track',
+      Icon:  parseInt(compCompliance.overdue || 0) > 0 ? AlertCircle : Shield,
+      color: (activeCompanyData?.compliance_score || 0) >= 80 ? '#10b981' : '#f59e0b',
+      bg:    (activeCompanyData?.compliance_score || 0) >= 80 ? '#ecfdf5' : '#fffbeb'
+    },
   ]
 
   return (

@@ -65,17 +65,13 @@ router.post('/', async (req, res) => {
     const isInterState = party_state && companyState && party_state !== companyState
 
     const processedItems = items.map(item => {
-      // Round at item level to match GST invoice rules (paisa precision)
-      const taxable = Math.round(parseFloat(item.quantity) * parseFloat(item.rate) * 100) / 100
+      const taxable = parseFloat(item.quantity) * parseFloat(item.rate)
       const gstRate = parseFloat(item.gst_rate || 18)
-      const igst    = isInterState ? Math.round(taxable * gstRate) / 100 : 0
-      const cgst    = !isInterState ? Math.round(taxable * gstRate / 2) / 100 : 0
-      const sgst    = !isInterState ? Math.round(taxable * gstRate / 2) / 100 : 0
-      const total   = Math.round((taxable + igst + cgst + sgst) * 100) / 100
-      subtotal   = Math.round((subtotal  + taxable) * 100) / 100
-      totalCgst  = Math.round((totalCgst + cgst)    * 100) / 100
-      totalSgst  = Math.round((totalSgst + sgst)    * 100) / 100
-      totalIgst  = Math.round((totalIgst + igst)    * 100) / 100
+      const igst    = isInterState ? (taxable * gstRate) / 100 : 0
+      const cgst    = !isInterState ? (taxable * gstRate) / 200 : 0
+      const sgst    = !isInterState ? (taxable * gstRate) / 200 : 0
+      const total   = taxable + igst + cgst + sgst
+      subtotal += taxable; totalCgst += cgst; totalSgst += sgst; totalIgst += igst
       return {
         description: item.description, hsn_sac_code: item.hsn_sac_code || null,
         quantity: parseFloat(item.quantity), unit: item.unit || 'NOS',
@@ -99,7 +95,7 @@ router.post('/', async (req, res) => {
        RETURNING *`,
       [company_id, invoice_type, invoice_number, invoice_date, due_date||null,
        party_name, party_gstin||null, party_address||null, party_state||companyState,
-       subtotal, subtotal, totalCgst, totalSgst, totalIgst, totalAmount, notes||null,
+       subtotal, subtotal /* taxable_amount = subtotal */, totalCgst, totalSgst, totalIgst, totalAmount, notes||null,
        tds_section||null, tdsAmountFinal||null]
     )
     const invoice = inv.rows[0]
