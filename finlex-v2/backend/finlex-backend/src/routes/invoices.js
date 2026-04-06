@@ -34,7 +34,6 @@ router.get('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    // FIX: Validate CA has access to the company this invoice belongs to
     const inv = await pool.query(
       `SELECT i.* FROM invoices i
        JOIN ca_company_access cca ON cca.company_id=i.company_id
@@ -47,6 +46,10 @@ router.get('/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
+// ══════════════════════════════════════════════════════════════════════════════
+// POST /api/invoices — Create Invoice with VALIDATION
+// CRITICAL FIX: Validates totals BEFORE saving to prevent bad data
+// ══════════════════════════════════════════════════════════════════════════════
 router.post('/', async (req, res) => {
   const { company_id, invoice_type, invoice_number, invoice_date, due_date, party_name, party_gstin, party_address, party_state, items, notes, tds_section, tds_amount: tds_amount_input } = req.body
 
@@ -71,25 +74,83 @@ router.post('/', async (req, res) => {
     const isInterState = party_state && companyState && party_state !== companyState
 
     const processedItems = items.map(item => {
-      const taxable = parseFloat(item.quantity) * parseFloat(item.rate)
+      const quantity = parseFloat(item.quantity)
+      const rate = parseFloat(item.rate)
+      const taxable = quantity * rate
       const gstRate = parseFloat(item.gst_rate || 18)
-      const igst    = isInterState ? (taxable * gstRate) / 100 : 0
-      const cgst    = !isInterState ? (taxable * gstRate) / 200 : 0
-      const sgst    = !isInterState ? (taxable * gstRate) / 200 : 0
-      const total   = taxable + igst + cgst + sgst
-      subtotal += taxable; totalCgst += cgst; totalSgst += sgst; totalIgst += igst
+      
+      const igst = isInterState ? (taxable * gstRate) / 100 : 0
+      const cgst = !isInterState ? (taxable * gstRate) / 200 : 0
+      const sgst = !isInterState ? (taxable * gstRate) / 200 : 0
+      const total = taxable + igst + cgst + sgst
+      
+      subtotal += taxable
+      totalCgst += cgst
+      totalSgst += sgst
+      totalIgst += igst
+      
       return {
-        description: item.description, hsn_sac_code: item.hsn_sac_code || null,
-        quantity: parseFloat(item.quantity), unit: item.unit || 'NOS',
-        rate: parseFloat(item.rate), taxable_amount: taxable, gst_rate: gstRate,
-        cgst_rate: isInterState ? 0 : gstRate/2, sgst_rate: isInterState ? 0 : gstRate/2,
+        description: item.description, 
+        hsn_sac_code: item.hsn_sac_code || null,
+        quantity: quantity, 
+        unit: item.unit || 'NOS',
+        rate: rate, 
+        taxable_amount: taxable, 
+        gst_rate: gstRate,
+        cgst_rate: isInterState ? 0 : gstRate/2, 
+        sgst_rate: isInterState ? 0 : gstRate/2,
         igst_rate: isInterState ? gstRate : 0,
-        cgst_amount: cgst, sgst_amount: sgst, igst_amount: igst, total_amount: total
+        cgst_amount: cgst, 
+        sgst_amount: sgst, 
+        igst_amount: igst, 
+        total_amount: total
       }
     })
 
-    const totalAmount    = subtotal + totalCgst + totalSgst + totalIgst
+    const totalAmount = subtotal + totalCgst + totalSgst + totalIgst
     const tdsAmountFinal = parseFloat(tds_amount_input || 0)
+
+    // ══════════════════════════════════════════════════════════════
+    // CRITICAL VALIDATION: Verify totals are mathematically correct
+    // ══════════════════════════════════════════════════════════════
+    const calculatedTotal = subtotal + totalCgst + totalSgst + totalIgst
+    if (Math.abs(calculatedTotal - totalAmount) > 0.01) {
+      await client.query('ROLLBACK')
+      return res.status(400).json({ 
+        error: 'Invoice validation failed',
+        details: {
+          message: 'Taxable amount + GST does not equal total',
+          taxable: subtotal.toFixed(2),
+          cgst: totalCgst.toFixed(2),
+          sgst: totalSgst.toFixed(2),
+          igst: totalIgst.toFixed(2),
+          calculated_total: calculatedTotal.toFixed(2),
+          provided_total: totalAmount.toFixed(2),
+          difference: (calculatedTotal - totalAmount).toFixed(2)
+        }
+      })
+    }
+
+    // Verify each item total is correct
+    for (let i = 0; i < processedItems.length; i++) {
+      const item = processedItems[i]
+      const itemCalculatedTotal = item.taxable_amount + item.cgst_amount + item.sgst_amount + item.igst_amount
+      if (Math.abs(itemCalculatedTotal - item.total_amount) > 0.01) {
+        await client.query('ROLLBACK')
+        return res.status(400).json({
+          error: 'Item validation failed',
+          details: {
+            item_index: i,
+            description: item.description,
+            message: 'Item taxable + GST does not equal item total',
+            taxable: item.taxable_amount.toFixed(2),
+            gst_total: (item.cgst_amount + item.sgst_amount + item.igst_amount).toFixed(2),
+            calculated: itemCalculatedTotal.toFixed(2),
+            provided: item.total_amount.toFixed(2)
+          }
+        })
+      }
+    }
 
     const inv = await client.query(
       `INSERT INTO invoices
@@ -116,9 +177,10 @@ router.post('/', async (req, res) => {
       )
     }
 
+    // Create journal entry
     await createJournal(client, company_id, invoice, totalCgst, totalSgst, totalIgst, req.user.id, tdsAmountFinal, tds_section)
 
-    // Full audit log for invoice creation
+    // Audit log
     await auditLog(client, company_id, req.user.id, 'INVOICE_CREATED', 'invoices', invoice.id, null,
       { invoice_number, invoice_type, party_name, total_amount: totalAmount, tds_amount: tdsAmountFinal },
       req.ip)
@@ -128,10 +190,14 @@ router.post('/', async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK')
     if (err.code === '23505') return res.status(400).json({ error: `Invoice number "${invoice_number}" already exists` })
+    console.error('Invoice creation error:', err)
     res.status(500).json({ error: err.message })
   } finally { client.release() }
 })
 
+// ══════════════════════════════════════════════════════════════════════════════
+// PATCH /api/invoices/:id/cancel — Cancel Invoice with Reversal Entry
+// ══════════════════════════════════════════════════════════════════════════════
 router.patch('/:id/cancel', async (req, res) => {
   const client = await pool.connect()
   try {
@@ -148,6 +214,7 @@ router.patch('/:id/cancel', async (req, res) => {
 
     await client.query(`UPDATE invoices SET status='cancelled', updated_at=NOW() WHERE id=$1`, [invoice.id])
 
+    // Reverse the main invoice journal entry
     const { rows: jeRows } = await client.query(
       `SELECT id, entry_number FROM journal_entries WHERE reference_id=$1 AND reference_type='invoice' AND company_id=$2`,
       [invoice.id, invoice.company_id]
@@ -160,12 +227,16 @@ router.patch('/:id/cancel', async (req, res) => {
       const { rows: countRows } = await client.query('SELECT COUNT(*) FROM journal_entries WHERE company_id=$1', [invoice.company_id])
       const entryNum = `JE-${String(parseInt(countRows[0].count) + 1).padStart(4, '0')}`
       const { rows: [revJe] } = await client.query(
-        `INSERT INTO journal_entries(company_id,entry_number,entry_date,reference_type,reference_id,narration,is_posted,created_by)
-         VALUES($1,$2,$3,'reversal',$4,$5,true,$6) RETURNING id`,
+        `INSERT INTO journal_entries(company_id,entry_number,entry_date,reference_type,reference_id,narration,is_posted,created_by,reverses)
+         VALUES($1,$2,$3,'reversal',$4,$5,true,$6,$7) RETURNING id`,
         [invoice.company_id, entryNum, new Date().toISOString().split('T')[0], invoice.id,
          `REVERSAL: ${invoice.invoice_type === 'sale' ? 'Sales' : 'Purchase'} Invoice ${invoice.invoice_number} — ${invoice.party_name} [Cancelled]`,
-         req.user.id]
+         req.user.id, jeRows[0].id]
       )
+      
+      // Mark original as reversed
+      await client.query('UPDATE journal_entries SET reversed_by=$1 WHERE id=$2', [revJe.id, jeRows[0].id])
+      
       for (const line of lines) {
         await client.query(
           `INSERT INTO journal_entry_lines(journal_entry_id,account_id,debit_amount,credit_amount,narration) VALUES($1,$2,$3,$4,$5)`,
@@ -174,6 +245,7 @@ router.patch('/:id/cancel', async (req, res) => {
       }
     }
 
+    // Reverse TDS entries if any
     const { rows: tdsJeRows } = await client.query(
       `SELECT id FROM journal_entries WHERE reference_id=$1 AND reference_type='tds' AND company_id=$2`,
       [invoice.id, invoice.company_id]
@@ -183,11 +255,14 @@ router.patch('/:id/cancel', async (req, res) => {
       const { rows: tdsCount } = await client.query('SELECT COUNT(*) FROM journal_entries WHERE company_id=$1', [invoice.company_id])
       const tdsRevNum = `JE-${String(parseInt(tdsCount[0].count) + 1).padStart(4, '0')}`
       const { rows: [tdsRevJe] } = await client.query(
-        `INSERT INTO journal_entries(company_id,entry_number,entry_date,reference_type,reference_id,narration,is_posted,created_by)
-         VALUES($1,$2,$3,'reversal',$4,$5,true,$6) RETURNING id`,
+        `INSERT INTO journal_entries(company_id,entry_number,entry_date,reference_type,reference_id,narration,is_posted,created_by,reverses)
+         VALUES($1,$2,$3,'reversal',$4,$5,true,$6,$7) RETURNING id`,
         [invoice.company_id, tdsRevNum, new Date().toISOString().split('T')[0], invoice.id,
-         `REVERSAL: TDS for ${invoice.invoice_number} [Cancelled]`, req.user.id]
+         `REVERSAL: TDS for ${invoice.invoice_number} [Cancelled]`, req.user.id, tdsJe.id]
       )
+      
+      await client.query('UPDATE journal_entries SET reversed_by=$1 WHERE id=$2', [tdsRevJe.id, tdsJe.id])
+      
       for (const line of tdsLines) {
         await client.query(
           `INSERT INTO journal_entry_lines(journal_entry_id,account_id,debit_amount,credit_amount,narration) VALUES($1,$2,$3,$4,$5)`,
@@ -201,31 +276,24 @@ router.patch('/:id/cancel', async (req, res) => {
       [invoice.company_id, invoice.party_name, invoice.invoice_date]
     )
 
-    await client.query(
-      `UPDATE invoices SET invoice_number=invoice_number||'-VOID-'||id::text WHERE id=$1`, [invoice.id]
-    )
-
     await auditLog(client, invoice.company_id, req.user.id, 'INVOICE_CANCELLED', 'invoices', invoice.id,
-      { invoice_number: invoice.invoice_number, status: invoice.status },
-      { invoice_number: invoice.invoice_number + '-VOID-' + invoice.id, status: 'cancelled', party: invoice.party_name, amount: invoice.total_amount },
-      req.ip)
+      { status: 'confirmed' }, { status: 'cancelled' }, req.ip)
 
     await client.query('COMMIT')
-    res.json({
-      message: `Invoice ${invoice.invoice_number} cancelled — journals reversed, TDS cleared, number freed`,
-      reversal_entry: jeRows.length > 0 ? 'created' : 'no_journal_found'
-    })
+    res.json({ message: 'Invoice cancelled successfully', invoice_id: invoice.id })
   } catch (err) {
     await client.query('ROLLBACK')
+    console.error('Invoice cancellation error:', err)
     res.status(500).json({ error: err.message })
   } finally { client.release() }
 })
 
-router.patch('/:id/status', async (req, res) => {
+router.patch('/:id', async (req, res) => {
   const { status, payment_status } = req.body
   try {
-    const { rows: old } = await pool.query('SELECT * FROM invoices WHERE id=$1', [req.params.id])
+    const { rows: old } = await pool.query('SELECT status, payment_status, company_id FROM invoices WHERE id=$1', [req.params.id])
     if (!old.length) return res.status(404).json({ error: 'Invoice not found' })
+    
     const { rows } = await pool.query(
       `UPDATE invoices SET status=COALESCE($1,status), payment_status=COALESCE($2,payment_status), updated_at=NOW() WHERE id=$3 RETURNING *`,
       [status||null, payment_status||null, req.params.id]
@@ -240,10 +308,14 @@ router.patch('/:id/status', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
+// ══════════════════════════════════════════════════════════════════════════════
+// HELPER: Create Journal Entry from Invoice
+// ══════════════════════════════════════════════════════════════════════════════
 async function createJournal(client, companyId, invoice, cgst, sgst, igst, userId, tdsAmount=0, tdsSection=null) {
   const getAcc = async (code) => {
     const r = await client.query('SELECT id FROM accounts WHERE company_id=$1 AND code=$2', [companyId, code])
-    return r.rows[0]?.id
+    if (!r.rows[0]) throw new Error(`Account ${code} not found for company ${companyId}`)
+    return r.rows[0].id
   }
 
   const isSale = invoice.invoice_type === 'sale'
@@ -251,8 +323,8 @@ async function createJournal(client, companyId, invoice, cgst, sgst, igst, userI
   const entryNum = `JE-${String(parseInt(countRows[0].count) + 1).padStart(4, '0')}`
 
   const je = await client.query(
-    `INSERT INTO journal_entries(company_id,entry_number,entry_date,reference_type,reference_id,narration,is_posted,created_by)
-     VALUES($1,$2,$3,'invoice',$4,$5,true,$6) RETURNING id`,
+    `INSERT INTO journal_entries(company_id,entry_number,entry_date,reference_type,reference_id,narration,is_posted,created_by,is_editable)
+     VALUES($1,$2,$3,'invoice',$4,$5,true,$6,false) RETURNING id`,
     [companyId, entryNum, invoice.invoice_date, invoice.id,
      `${isSale ? 'Sales' : 'Purchase'} Invoice ${invoice.invoice_number} — ${invoice.party_name}`, userId]
   )
@@ -273,7 +345,8 @@ async function createJournal(client, companyId, invoice, cgst, sgst, igst, userI
     const cgstPayable = await getAcc('2002')
     const sgstPayable = await getAcc('2003')
     const igstPayable = await getAcc('2004')
-    // FIX: When buyer deducts TDS on a sale, AR is reduced and TDS Receivable is debited
+    
+    // When buyer deducts TDS on a sale, AR is reduced and TDS Receivable is debited
     if (tdsAmount > 0) {
       await addLine(receivable, invoice.total_amount - tdsAmount, 0, 'Accounts Receivable (net of TDS)')
       await addLine(tdsReceiv,  tdsAmount, 0, `TDS Receivable u/s ${tdsSection||'194'}`)
@@ -281,19 +354,21 @@ async function createJournal(client, companyId, invoice, cgst, sgst, igst, userI
       await addLine(receivable, invoice.total_amount, 0, 'Accounts Receivable')
     }
     await addLine(salesRev,   0, invoice.subtotal, 'Sales Revenue')
-    if (cgst > 0) await addLine(cgstPayable, 0, cgst, 'CGST Payable')
-    if (sgst > 0) await addLine(sgstPayable, 0, sgst, 'SGST Payable')
-    if (igst > 0) await addLine(igstPayable, 0, igst, 'IGST Payable')
+    if (cgst > 0.01) await addLine(cgstPayable, 0, cgst, 'CGST Payable')
+    if (sgst > 0.01) await addLine(sgstPayable, 0, sgst, 'SGST Payable')
+    if (igst > 0.01) await addLine(igstPayable, 0, igst, 'IGST Payable')
   } else {
     const purchases   = await getAcc('5001')
     const cgstInput   = await getAcc('1004')
     const sgstInput   = await getAcc('1005')
     const igstInput   = await getAcc('1006')
     const payable     = await getAcc('2001')
+    
     await addLine(purchases, invoice.subtotal, 0, 'Purchases')
-    if (cgst > 0) await addLine(cgstInput, cgst, 0, 'GST Input CGST')
-    if (sgst > 0) await addLine(sgstInput, sgst, 0, 'GST Input SGST')
-    if (igst > 0) await addLine(igstInput, igst, 0, 'GST Input IGST')
+    if (cgst > 0.01) await addLine(cgstInput, cgst, 0, 'GST Input CGST')
+    if (sgst > 0.01) await addLine(sgstInput, sgst, 0, 'GST Input SGST')
+    if (igst > 0.01) await addLine(igstInput, igst, 0, 'GST Input IGST')
+    
     if (tdsAmount > 0) {
       const tdsPayable = await getAcc('2005')
       await addLine(payable,    0, invoice.total_amount - tdsAmount, 'Accounts Payable (net of TDS)')
@@ -301,6 +376,19 @@ async function createJournal(client, companyId, invoice, cgst, sgst, igst, userI
     } else {
       await addLine(payable, 0, invoice.total_amount, 'Accounts Payable')
     }
+  }
+  
+  // Verify the journal is balanced
+  const { rows: checkRows } = await client.query(
+    `SELECT SUM(debit_amount) as total_debit, SUM(credit_amount) as total_credit 
+     FROM journal_entry_lines WHERE journal_entry_id=$1`,
+    [jeId]
+  )
+  const totalDebit = parseFloat(checkRows[0].total_debit || 0)
+  const totalCredit = parseFloat(checkRows[0].total_credit || 0)
+  
+  if (Math.abs(totalDebit - totalCredit) > 0.01) {
+    throw new Error(`Journal entry ${entryNum} is not balanced: Debit ${totalDebit} ≠ Credit ${totalCredit}`)
   }
 }
 
