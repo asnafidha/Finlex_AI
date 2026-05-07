@@ -141,8 +141,10 @@ export default function GSTPage() {
   const { company } = useAuth()
   const [activeTab, setActiveTab]     = useState('invoices')
   const [invoiceList, setInvoiceList] = useState([])
+  const [allInvoices, setAllInvoices] = useState([])  // always full list for stats
   const [loading, setLoading]         = useState(true)
   const [showForm, setShowForm]       = useState(false)
+  const [showReview, setShowReview]   = useState(false)   // Feature M: Review Screen
   const [showPayment, setShowPayment] = useState(null)
   const [submitting, setSubmitting]   = useState(false)
   const [success, setSuccess]         = useState('')
@@ -150,6 +152,7 @@ export default function GSTPage() {
   const [cancelling, setCancelling]   = useState(null)
   const [showTable, setShowTable]     = useState(true)
   const [toast, setToast]             = useState(null)
+  const [alreadyPaid, setAlreadyPaid] = useState(0)  // tracks partial payments
 
   const showToast = (msg, detail, type = 'success') => {
     setToast({ msg, detail, type })
@@ -185,9 +188,12 @@ export default function GSTPage() {
   const loadInvoices = async () => {
     setLoading(true)
     try {
+      // Always fetch ALL invoices for correct stats regardless of active tab
+      const all = await invoicesApi.list(company.id, null)
+      setAllInvoices(all)
+      // Filter display list based on active tab
       const type = activeTab === 'sales' ? 'sale' : activeTab === 'purchases' ? 'purchase' : null
-      const data = await invoicesApi.list(company.id, type)
-      setInvoiceList(data)
+      setInvoiceList(type ? all.filter(i => i.invoice_type === type) : all)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -208,12 +214,88 @@ export default function GSTPage() {
   const isInter  = form.party_state && company?.state_code && form.party_state !== company?.state_code
   const total    = isInter ? subtotal + igst : subtotal + cgst + sgst
 
+  // ── Feature N: Smart Warnings ─────────────────────────────────
+  const smartWarnings = []
+
+  // Warning: GST mismatch — party_state set but GSTIN missing
+  if (form.party_state && !form.party_gstin && form.invoice_type === 'sale') {
+    smartWarnings.push({ type: 'warn', msg: '⚠ State code provided but GSTIN missing — unregistered B2C party?' })
+  }
+  // Warning: GSTIN provided but no state code
+  if (form.party_gstin && !form.party_state) {
+    const gstinState = form.party_gstin.substring(0, 2)
+    if (/^\d{2}$/.test(gstinState)) {
+      smartWarnings.push({ type: 'info', msg: `ℹ State code auto-detectable from GSTIN: ${gstinState}` })
+    }
+  }
+  // Warning: inter-state but GST showing as CGST/SGST (state mismatch)
+  if (form.party_gstin && form.party_state && company?.state_code) {
+    const gstinState = form.party_gstin.substring(0, 2)
+    if (gstinState !== form.party_state) {
+      smartWarnings.push({ type: 'error', msg: `⚠ GST mismatch — GSTIN starts with ${gstinState} but Party State Code is ${form.party_state}` })
+    }
+  }
+  // Warning: TDS applicable (professional fees / rent) but TDS not filled
+  if (form.invoice_type === 'purchase' && !form.tds_section) {
+    const tdsKeywords = ['rent', 'professional', 'legal', 'consultant', 'advocate', 'ca fee', 'audit', 'contract', 'labour', 'commission']
+    const descText = items.map(i => (i.description || '').toLowerCase()).join(' ')
+    const partyText = (form.party_name || '').toLowerCase()
+    const hasTdsKeyword = tdsKeywords.some(kw => descText.includes(kw) || partyText.includes(kw))
+    if (hasTdsKeyword && subtotal >= 30000) {
+      smartWarnings.push({ type: 'warn', msg: '⚠ TDS applicable but not filled — this vendor/service may require TDS deduction' })
+    }
+  }
+  // Warning: large invoice with no GSTIN
+  if (!form.party_gstin && total > 250000) {
+    smartWarnings.push({ type: 'warn', msg: '⚠ Invoice value > ₹2.5L with no GSTIN — this will appear in B2CL in GSTR-1' })
+  }
+  // Warning: missing invoice number
+  if (!form.invoice_number.trim()) {
+    smartWarnings.push({ type: 'error', msg: '⚠ Invoice number is required' })
+  }
+  // Warning: no line items with description
+  if (items.some(i => !i.description.trim())) {
+    smartWarnings.push({ type: 'warn', msg: '⚠ Some line items have empty description' })
+  }
+
+  // ── Feature I: Auto Account hints per line item ────────────────
+  const AUTO_ACCOUNT_HINTS = [
+    { keywords: ['rent','lease'], name: 'Rent (5102)' },
+    { keywords: ['salary','wages','payroll'], name: 'Salaries & Wages (5101)' },
+    { keywords: ['electricity','power','eb'], name: 'Electricity (5103)' },
+    { keywords: ['internet','broadband','phone','mobile'], name: 'Internet & Phone (5104)' },
+    { keywords: ['professional','legal','advocate','ca fee','audit','consultant'], name: 'Professional Fees (5107)' },
+    { keywords: ['software','saas','subscription','license'], name: 'Misc Expense (5112)' },
+    { keywords: ['travel','conveyance','fuel','petrol','cab'], name: 'Travel & Conveyance (5106)' },
+    { keywords: ['office','stationery','supplies','printing'], name: 'Office Supplies (5105)' },
+    { keywords: ['purchase','raw material','goods','stock'], name: 'Purchases (5001)' },
+    { keywords: ['service','consulting'], name: 'Service Revenue (4002)' },
+  ]
+  const getAccountHint = (desc) => {
+    if (!desc) return null
+    const lower = desc.toLowerCase()
+    const match = AUTO_ACCOUNT_HINTS.find(r => r.keywords.some(kw => lower.includes(kw)))
+    return match ? match.name : null
+  }
+
+  // ── Open review screen (Feature M) ────────────────────────────
+  const handleReviewAndConfirm = () => {
+    setError('')
+    const blockingErrors = smartWarnings.filter(w => w.type === 'error')
+    if (blockingErrors.length > 0) {
+      setError(blockingErrors.map(e => e.msg).join(' • '))
+      return
+    }
+    setShowReview(true)
+  }
+
   const handleCreateInvoice = async () => {
     setSubmitting(true); setError('')
     try {
       const inv = await invoicesApi.create({ company_id: company.id, ...form, items })
       showToast('Invoice created', `${form.invoice_number || 'Invoice'} · ₹${total.toLocaleString('en-IN')} · Journal entry posted`)
       setShowForm(false)
+      setShowReview(false)
       setForm({ invoice_type:'sale', invoice_number:'', invoice_date: new Date().toISOString().split('T')[0], party_name:'', party_gstin:'', party_state:'', notes:'', tds_section:'', tds_amount:'' })
       setItems([{ description:'', hsn_sac_code:'', quantity:1, unit:'NOS', rate:0, gst_rate:18 }])
       loadInvoices()
@@ -314,8 +396,8 @@ export default function GSTPage() {
 
       {/* GST Summary Cards */}
       {(() => {
-        const sales     = invoiceList.filter(i => i.invoice_type==='sale' && i.status!=='cancelled')
-        const purchases = invoiceList.filter(i => i.invoice_type==='purchase' && i.status!=='cancelled')
+        const sales     = allInvoices.filter(i => i.invoice_type==='sale' && i.status!=='cancelled')
+        const purchases = allInvoices.filter(i => i.invoice_type==='purchase' && i.status!=='cancelled')
         const totalRevenue   = sales.reduce((s,i) => s + parseFloat(i.total_amount||0), 0)
         const totalGSTOut    = sales.reduce((s,i) => s + parseFloat(i.cgst_amount||0)+parseFloat(i.sgst_amount||0)+parseFloat(i.igst_amount||0), 0)
         const totalITC       = purchases.reduce((s,i) => s + parseFloat(i.cgst_amount||0)+parseFloat(i.sgst_amount||0)+parseFloat(i.igst_amount||0), 0)
@@ -425,7 +507,25 @@ export default function GSTPage() {
                       {/* Pay button */}
                       {inv.payment_status !== 'paid' && inv.status !== 'cancelled' && (
                         <button
-                          onClick={() => { setShowPayment(inv); setPayForm({ amount: inv.total_amount, payment_date: new Date().toISOString().split('T')[0], payment_mode:'bank', reference:'' }) }}
+                          onClick={async () => {
+                            setShowPayment(inv)
+                            // Fetch already paid amount for partial payment display
+                            try {
+                              const res = await fetch(`${BASE_URL}/payments?company_id=${company.id}`, {
+                                headers: { 'Authorization': `Bearer ${getToken()}` }
+                              })
+                              const payments = await res.json()
+                              const paid = payments
+                                .filter(p => p.invoice_id === inv.id)
+                                .reduce((s, p) => s + parseFloat(p.debit_amount || p.credit_amount || 0), 0)
+                              const remaining = parseFloat(inv.total_amount) - paid
+                              setAlreadyPaid(paid)
+                              setPayForm({ amount: remaining.toFixed(2), payment_date: new Date().toISOString().split('T')[0], payment_mode:'bank', reference:'' })
+                            } catch {
+                              setAlreadyPaid(0)
+                              setPayForm({ amount: inv.total_amount, payment_date: new Date().toISOString().split('T')[0], payment_mode:'bank', reference:'' })
+                            }
+                          }}
                           title="Record Payment"
                           style={{ display:'flex', alignItems:'center', gap:4, padding:'5px 10px', borderRadius:7, border:'none', background:'linear-gradient(135deg, #C9A84C, #e2c06e)', color:'var(--navy)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'var(--font-body)' }}>
                           <CreditCard size={12} /> Pay
@@ -534,6 +634,12 @@ export default function GSTPage() {
                         <label style={{ fontSize:10, fontWeight:600, color:'var(--gray-600)', display:'block', marginBottom:4 }}>{f.label}</label>
                         <input type={f.type} value={item[f.key]} onChange={e => updateItem(i, f.key, e.target.value)}
                           style={{ width:'100%', padding:'7px 10px', borderRadius:6, border:'1px solid var(--gray-200)', fontSize:12, fontFamily:'var(--font-body)', background:'var(--white)' }} />
+                        {/* Feature I: Auto Account Hint */}
+                        {f.key === 'description' && getAccountHint(item.description) && (
+                          <div style={{ fontSize:10, color:'#0369a1', marginTop:3, display:'flex', alignItems:'center', gap:3 }}>
+                            <span>→</span> <span style={{ fontWeight:600 }}>{getAccountHint(item.description)}</span>
+                          </div>
+                        )}
                       </div>
                     ))}
                     {/* Unit dropdown */}
@@ -592,11 +698,132 @@ export default function GSTPage() {
               </div>
             </div>
 
+            {/* Feature N: Smart Warnings */}
+            {smartWarnings.length > 0 && (
+              <div style={{ marginBottom:14 }}>
+                {smartWarnings.map((w, i) => (
+                  <div key={i} style={{
+                    display:'flex', alignItems:'flex-start', gap:8,
+                    padding:'8px 12px', borderRadius:8, marginBottom:6, fontSize:12, fontWeight:500,
+                    background: w.type === 'error' ? '#fef2f2' : w.type === 'warn' ? '#fffbeb' : '#eff6ff',
+                    color:      w.type === 'error' ? '#b91c1c' : w.type === 'warn' ? '#92400e' : '#1e40af',
+                    border:     `1px solid ${w.type === 'error' ? '#fecaca' : w.type === 'warn' ? '#fde68a' : '#bfdbfe'}`,
+                  }}>
+                    {w.msg}
+                  </div>
+                ))}
+              </div>
+            )}
+
             {error && <div style={{ background:'#fef2f2', color:'#dc2626', padding:'10px 14px', borderRadius:8, marginBottom:14, fontSize:13 }}>{error}</div>}
 
             <div style={{ display:'flex', gap:12 }}>
               <button onClick={() => setShowForm(false)} style={{ flex:1, padding:12, borderRadius:10, border:'1px solid var(--gray-200)', background:'var(--gray-100)', color:'var(--gray-600)', fontSize:14, cursor:'pointer', fontFamily:'var(--font-body)' }}>
                 Cancel
+              </button>
+              <button onClick={handleReviewAndConfirm} disabled={submitting} style={{
+                flex:2, display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+                padding:12, borderRadius:10, border:'none',
+                background:'linear-gradient(135deg, #C9A84C, #e2c06e)',
+                color:'var(--navy)', fontSize:14, fontWeight:700, cursor:'pointer', fontFamily:'var(--font-body)',
+                opacity: submitting ? 0.7 : 1,
+              }}>
+                <Shield size={16}/> Review &amp; Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Feature M: Review Screen Modal */}
+      {showReview && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1100, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div style={{ background:'var(--white)', borderRadius:20, padding:32, width:'100%', maxWidth:560, maxHeight:'90vh', overflowY:'auto' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
+              <h2 style={{ fontFamily:'var(--font-display)', fontSize:20, fontWeight:700, color:'var(--navy)', display:'flex', alignItems:'center', gap:8 }}>
+                <Shield size={20} style={{ color:'var(--gold)' }}/> Confirm Invoice
+              </h2>
+              <button onClick={() => setShowReview(false)} style={{ border:'none', background:'none', cursor:'pointer', color:'var(--gray-600)' }}><X size={20}/></button>
+            </div>
+
+            {/* Summary Table */}
+            <div style={{ background:'var(--gray-100)', borderRadius:12, padding:'16px 18px', marginBottom:16 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'var(--gray-600)', marginBottom:12, letterSpacing:1 }}>INVOICE SUMMARY</div>
+              {[
+                ['Type',         form.invoice_type.toUpperCase()],
+                ['Invoice No',   form.invoice_number || '—'],
+                ['Date',         form.invoice_date],
+                ['Party',        form.party_name || '—'],
+                ['GSTIN',        form.party_gstin || 'Not provided (B2C)'],
+                ['State',        form.party_state ? (form.party_state === company?.state_code ? `${form.party_state} (Intra-state → CGST+SGST)` : `${form.party_state} (Inter-state → IGST)`) : '—'],
+              ].map(([k, v]) => (
+                <div key={k} style={{ display:'flex', justifyContent:'space-between', padding:'5px 0', borderBottom:'1px solid var(--gray-200)', fontSize:13 }}>
+                  <span style={{ color:'var(--gray-600)', fontWeight:500 }}>{k}</span>
+                  <span style={{ fontWeight:600, color:'var(--navy)' }}>{v}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Line Items */}
+            <div style={{ background:'var(--gray-100)', borderRadius:12, padding:'14px 18px', marginBottom:16 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'var(--gray-600)', marginBottom:10, letterSpacing:1 }}>LINE ITEMS ({items.length})</div>
+              {items.map((it, i) => (
+                <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'6px 0', borderBottom:'1px solid var(--gray-200)', fontSize:12 }}>
+                  <div>
+                    <div style={{ fontWeight:600, color:'var(--navy)' }}>{it.description || '(no description)'}</div>
+                    <div style={{ color:'var(--gray-600)', fontSize:11 }}>{it.quantity} × {fmt(it.rate)} @ {it.gst_rate}% GST</div>
+                    {getAccountHint(it.description) && (
+                      <div style={{ color:'#0369a1', fontSize:10, marginTop:2 }}>→ {getAccountHint(it.description)}</div>
+                    )}
+                  </div>
+                  <span style={{ fontWeight:700, color:'var(--navy)' }}>{fmt(it.quantity * it.rate * (1 + it.gst_rate/100))}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* GST + TDS + Net breakdown */}
+            <div style={{ background:'var(--navy)', borderRadius:12, padding:'14px 18px', marginBottom:16, color:'var(--white)' }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'rgba(201,168,76,0.8)', marginBottom:10, letterSpacing:1 }}>FINANCIALS</div>
+              {[
+                ['Taxable Amount', fmt(subtotal)],
+                ...(isInter
+                  ? [['IGST', fmt(igst)]]
+                  : [['CGST', fmt(cgst)], ['SGST', fmt(sgst)]]
+                ),
+                ...(form.tds_section && parseFloat(form.tds_amount||0) > 0
+                  ? [[`TDS u/s ${form.tds_section}`, `− ${fmt(form.tds_amount)}`]]
+                  : []
+                ),
+              ].map(([k, v]) => (
+                <div key={k} style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:'rgba(255,255,255,0.75)', marginBottom:6 }}>
+                  <span>{k}</span><span>{v}</span>
+                </div>
+              ))}
+              <div style={{ borderTop:'1px solid rgba(201,168,76,0.3)', paddingTop:10, marginTop:4, display:'flex', justifyContent:'space-between', fontFamily:'var(--font-display)', fontSize:20, fontWeight:700, color:'var(--gold)' }}>
+                <span>Net Payable</span>
+                <span>{fmt(total - parseFloat(form.tds_amount||0))}</span>
+              </div>
+            </div>
+
+            {/* Non-blocking warnings in review too */}
+            {smartWarnings.filter(w => w.type === 'warn' || w.type === 'info').length > 0 && (
+              <div style={{ marginBottom:14 }}>
+                {smartWarnings.filter(w => w.type !== 'error').map((w, i) => (
+                  <div key={i} style={{
+                    padding:'8px 12px', borderRadius:8, marginBottom:6, fontSize:12, fontWeight:500,
+                    background: w.type === 'warn' ? '#fffbeb' : '#eff6ff',
+                    color:      w.type === 'warn' ? '#92400e' : '#1e40af',
+                    border:     `1px solid ${w.type === 'warn' ? '#fde68a' : '#bfdbfe'}`,
+                  }}>{w.msg}</div>
+                ))}
+              </div>
+            )}
+
+            {error && <div style={{ background:'#fef2f2', color:'#dc2626', padding:'10px 14px', borderRadius:8, marginBottom:14, fontSize:13 }}>{error}</div>}
+
+            <div style={{ display:'flex', gap:12 }}>
+              <button onClick={() => setShowReview(false)} style={{ flex:1, padding:12, borderRadius:10, border:'1px solid var(--gray-200)', background:'var(--gray-100)', color:'var(--gray-600)', fontSize:14, cursor:'pointer', fontFamily:'var(--font-body)' }}>
+                ← Edit
               </button>
               <button onClick={handleCreateInvoice} disabled={submitting} style={{
                 flex:2, display:'flex', alignItems:'center', justifyContent:'center', gap:8,
@@ -605,7 +832,7 @@ export default function GSTPage() {
                 color:'var(--navy)', fontSize:14, fontWeight:700, cursor:'pointer', fontFamily:'var(--font-body)',
                 opacity: submitting ? 0.7 : 1,
               }}>
-                <Send size={16}/> {submitting ? 'Creating...' : 'Create Invoice'}
+                <Send size={16}/> {submitting ? 'Posting...' : 'Post Invoice'}
               </button>
             </div>
           </div>
@@ -624,7 +851,29 @@ export default function GSTPage() {
             <div style={{ background:'var(--gray-100)', borderRadius:10, padding:14, marginBottom:20, border:'1px solid var(--gray-200)' }}>
               <div style={{ fontSize:13, fontWeight:600, color:'var(--navy)', marginBottom:4 }}>{showPayment.invoice_number}</div>
               <div style={{ fontSize:12, color:'var(--gray-600)' }}>{showPayment.party_name}</div>
-              <div style={{ fontSize:16, fontWeight:700, color:'var(--navy)', marginTop:8 }}>{fmt(showPayment.total_amount)}</div>
+              <div style={{ display:'flex', justifyContent:'space-between', marginTop:10 }}>
+                <div>
+                  <div style={{ fontSize:10, color:'var(--gray-400)', fontWeight:600 }}>INVOICE TOTAL</div>
+                  <div style={{ fontSize:15, fontWeight:700, color:'var(--navy)' }}>{fmt(showPayment.total_amount)}</div>
+                </div>
+                {alreadyPaid > 0 && (
+                  <>
+                    <div>
+                      <div style={{ fontSize:10, color:'var(--gray-400)', fontWeight:600 }}>ALREADY PAID</div>
+                      <div style={{ fontSize:15, fontWeight:700, color:'#16a34a' }}>{fmt(alreadyPaid)}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize:10, color:'var(--gray-400)', fontWeight:600 }}>REMAINING</div>
+                      <div style={{ fontSize:15, fontWeight:700, color:'#dc2626' }}>{fmt(parseFloat(showPayment.total_amount) - alreadyPaid)}</div>
+                    </div>
+                  </>
+                )}
+              </div>
+              {alreadyPaid > 0 && (
+                <div style={{ marginTop:8, fontSize:11, background:'#fffbeb', color:'#92400e', padding:'6px 10px', borderRadius:6, fontWeight:600 }}>
+                  ⚡ Partial payment — enter any amount up to remaining balance
+                </div>
+              )}
             </div>
 
             <div style={{ display:'flex', flexDirection:'column', gap:14, marginBottom:20 }}>

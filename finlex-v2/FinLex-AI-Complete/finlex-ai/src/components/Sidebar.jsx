@@ -1,55 +1,60 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { companies as companiesApi } from '../services/api';
-import { 
-  BookOpen, LayoutDashboard, FileText, Calculator, Calendar, BarChart2, 
-  Settings, LogOut, Shield, Building, Receipt, FileCheck, GitMerge, 
+import {
+  BookOpen, LayoutDashboard, FileText, Calculator, Calendar, BarChart2, BarChart3,
+  Settings, LogOut, Shield, Building, Receipt, FileCheck, GitMerge,
   ClipboardList, ChevronDown, Check, ArrowDownLeft, Users, TrendingDown,
-  Landmark, Scale, CreditCard, Wallet, RefreshCw
+  Landmark, Scale, CreditCard, Wallet, RefreshCw, BookUser, LockKeyhole,FolderOpen 
 } from 'lucide-react';
 
 const navSections = [
   {
     label: 'MAIN',
     items: [
-      { id: 'dashboard',    label: 'Dashboard',          icon: LayoutDashboard },
-      { id: 'documents',    label: 'AI Documents',        icon: FileText },
-      { id: 'multicompany', label: 'CA Mission Control',  icon: Building },
+      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'documents', label: 'AI Documents', icon: FileText },
+      { id: 'multicompany', label: 'CA Mission Control', icon: Building },
     ]
   },
   {
     label: 'GST & COMPLIANCE',
     items: [
-      { id: 'gst',          label: 'GST Invoicing',       icon: Receipt },
-      { id: 'gstr',         label: 'GSTR Export',         icon: FileCheck },
-      { id: 'itc',          label: 'ITC Reconciliation',  icon: GitMerge },
-      { id: 'credit-notes', label: 'Credit / Debit Notes',icon: ArrowDownLeft },
-      { id: 'compliance',   label: 'Compliance Calendar', icon: Calendar },
+      { id: 'gst', label: 'GST Invoicing', icon: Receipt },
+      { id: 'gstr', label: 'GSTR Export', icon: FileCheck },
+      { id: 'itc', label: 'ITC Reconciliation', icon: GitMerge },
+      { id: 'credit-notes', label: 'Credit / Debit Notes', icon: ArrowDownLeft },
+      { id: 'compliance', label: 'Compliance Calendar', icon: Calendar },
     ]
   },
   {
     label: 'TAX & AUDIT',
     items: [
-      { id: 'tds',          label: 'TDS Module',          icon: Calculator },
-      { id: 'itr',          label: 'ITR Preparation',     icon: BarChart2 },
-      { id: 'advance-tax',  label: 'Advance Tax Planner', icon: CreditCard },
-      { id: 'audit',        label: 'Audit & Risk',        icon: Shield },
-      { id: 'audit-trail',  label: 'Audit Trail',         icon: ClipboardList },
+      { id: 'tds', label: 'TDS Module', icon: Calculator },
+      { id: 'itr', label: 'ITR Preparation', icon: BarChart2 },
+      { id: 'advance-tax', label: 'Advance Tax Planner', icon: CreditCard },
+      { id: 'audit', label: 'Audit & Risk', icon: Shield },
+      { id: 'audit-trail', label: 'Audit Trail', icon: ClipboardList },
     ]
   },
   {
     label: 'ACCOUNTING',
     items: [
-      { id: 'journals',          label: 'Journal Entries',     icon: BookOpen },
-      { id: 'bank-recon',        label: 'Bank Reconciliation', icon: Landmark },
-      { id: 'opening-balances',  label: 'Opening Balances',    icon: Scale },
-      { id: 'depreciation',      label: 'Depreciation',        icon: TrendingDown },
+      { id: 'journals', label: 'Journal Entries', icon: BookOpen },
+      { id: 'bank-recon', label: 'Bank Reconciliation', icon: Landmark },
+      { id: 'opening-balances', label: 'Opening Balances', icon: Scale },
+      { id: 'depreciation', label: 'Depreciation', icon: TrendingDown },
+      { id: 'pl-report', label: 'Profit & Loss', icon: BarChart3 },
+      { id: 'party-ledger', label: 'Party Ledger', icon: BookUser },
+      { id: 'payments', label: 'Payments', icon: Wallet },
+      { id: 'client-collab',     label: 'Client Collaboration', icon: FolderOpen },
     ]
   },
   {
     label: 'HR & PAYROLL',
     items: [
       { id: 'payroll', label: 'Payroll', icon: Users },
+      { id: 'fy-lock', label: 'FY Lock', icon: LockKeyhole },
     ]
   },
 ];
@@ -63,7 +68,7 @@ export default function Sidebar({ page, setPage, onLogout }) {
   useEffect(() => {
     companiesApi.list()
       .then(data => setAllCompanies(data))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   useEffect(() => {

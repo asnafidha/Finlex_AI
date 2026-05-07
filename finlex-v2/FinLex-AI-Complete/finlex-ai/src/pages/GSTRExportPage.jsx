@@ -289,7 +289,7 @@ function GSTR3BView({ data }) {
         ))}
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '14px 0 0', marginTop: 4 }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--navy)' }}>Total ITC</span>
-          <span style={{ fontSize: 14, fontWeight: 700, color: '#10b981' }}>₹{parseFloat(itc_available?.total_itc || 0).toLocaleString('en-IN')}</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#10b981' }}>₹{parseFloat(itc_available?.total_itc || itc_available?.total || 0).toLocaleString('en-IN')}</span>
         </div>
       </div>
 

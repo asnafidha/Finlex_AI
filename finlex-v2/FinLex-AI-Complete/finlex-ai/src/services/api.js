@@ -214,3 +214,15 @@ export const ai = {
   auditAnalysis:   (company_id, from, to)         => request('/ai/audit-analysis',   { method:'POST', body:JSON.stringify({ company_id, from, to }) }),
   rules:           (query)                        => request(`/ai/rules${query?`?query=${encodeURIComponent(query)}`:''}`),
 }
+// ── CLIENT COLLABORATION ─────────────────────────────────
+export const clientCollab = {
+  getRequests:     (companyId) => request(`/client-collab/requests?company_id=${companyId}`),
+  createRequest:   (data)      => request('/client-collab/requests', { method: 'POST', body: JSON.stringify(data) }),
+  getRequest:      (id)        => request(`/client-collab/requests/${id}`),
+  updateItemStatus:(itemId, status) => request(`/client-collab/items/${itemId}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  addComment:      (requestId, message) => request(`/client-collab/requests/${requestId}/comments`, { method: 'POST', body: JSON.stringify({ message }) }),
+  deleteRequest:   (id)        => request(`/client-collab/requests/${id}`, { method: 'DELETE' }),
+  getSummary:      (companyId) => request(`/client-collab/summary?company_id=${companyId}`),
+  getNotifications: ()          => request('/client-collab/notifications'),
+  markNotificationsRead: ()     => request('/client-collab/notifications/mark-read', { method: 'PATCH' }),
+};

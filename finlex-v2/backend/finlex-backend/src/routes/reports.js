@@ -1,6 +1,6 @@
 const router = require('express').Router()
-const pool   = require('../config/db')
-const auth   = require('../middleware/auth')
+const pool = require('../config/db')
+const auth = require('../middleware/auth')
 
 router.use(auth)
 
@@ -13,64 +13,74 @@ router.use(auth)
 router.get('/trial-balance', async (req, res) => {
   const { company_id, from, to } = req.query
   if (!company_id) return res.status(400).json({ error: 'company_id required' })
-  
+
   try {
+    // Auto-detect whether migration_deep_accounting_fixes.sql has been run.
+    // That migration adds opening_debit and opening_credit split columns.
+    // If they don't exist yet, fall back to deriving them from opening_balance + account type.
+    const { rows: colCheck } = await pool.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'accounts' AND column_name IN ('opening_debit','opening_credit')`
+    )
+    const hasSplitCols = colCheck.length === 2
+
+    const openingDebitExpr = hasSplitCols
+      ? 'COALESCE(a.opening_debit, 0)'
+      : `CASE WHEN a.type IN ('asset','expense')
+              THEN COALESCE(a.opening_balance, 0)
+              ELSE 0 END`
+
+    const openingCreditExpr = hasSplitCols
+      ? 'COALESCE(a.opening_credit, 0)'
+      : `CASE WHEN a.type IN ('liability','equity','revenue')
+              THEN COALESCE(a.opening_balance, 0)
+              ELSE 0 END`
+
+    const groupByCols = hasSplitCols
+      ? 'a.id, a.code, a.name, a.type, a.opening_debit, a.opening_credit'
+      : 'a.id, a.code, a.name, a.type, a.opening_balance'
+
     const { rows } = await pool.query(
       `SELECT
          a.id,
          a.code, 
          a.name, 
          a.type,
-         -- Opening columns (from explicit debit/credit fields)
-         COALESCE(a.opening_debit,  0) AS opening_debit,
-         COALESCE(a.opening_credit, 0) AS opening_credit,
+         -- Opening columns: use split cols if available, else derive from opening_balance
+         ${openingDebitExpr}  AS opening_debit,
+         ${openingCreditExpr} AS opening_credit,
          
          -- Period movements (excluding opening entries)
          COALESCE(SUM(jel.debit_amount),  0) AS period_debit,
          COALESCE(SUM(jel.credit_amount), 0) AS period_credit,
          
-         -- Closing balance: opening + period, collapsed to one side based on nature
-         -- For debit-nature accounts (asset, expense):
-         --   closing_debit  = opening_debit + period_debit - opening_credit - period_credit
-         --   (if result is negative, it flips to closing_credit)
-         -- For credit-nature accounts (liability, equity, revenue):
-         --   closing_credit = opening_credit + period_credit - opening_debit - period_debit
-         CASE
-           WHEN a.type IN ('asset','expense') THEN
-             GREATEST(0,
-               COALESCE(a.opening_debit,0)  + COALESCE(SUM(jel.debit_amount),0)
-             - COALESCE(a.opening_credit,0) - COALESCE(SUM(jel.credit_amount),0)
-             )
-           ELSE 0
-         END AS closing_debit,
+         -- FIX: both sides use GREATEST(0,net) so contra balances flip correctly
+         GREATEST(0,
+           ${openingDebitExpr}  + COALESCE(SUM(jel.debit_amount),0)
+         - ${openingCreditExpr} - COALESCE(SUM(jel.credit_amount),0)
+         ) AS closing_debit,
          
-         CASE
-           WHEN a.type IN ('liability','equity','revenue') THEN
-             GREATEST(0,
-               COALESCE(a.opening_credit,0)  + COALESCE(SUM(jel.credit_amount),0)
-             - COALESCE(a.opening_debit,0)   - COALESCE(SUM(jel.debit_amount),0)
-             )
-           ELSE 0
-         END AS closing_credit
+         GREATEST(0,
+           ${openingCreditExpr}  + COALESCE(SUM(jel.credit_amount),0)
+         - ${openingDebitExpr}   - COALESCE(SUM(jel.debit_amount),0)
+         ) AS closing_credit
          
        FROM accounts a
        
        LEFT JOIN journal_entry_lines jel ON jel.account_id = a.id
        LEFT JOIN journal_entries je ON je.id = jel.journal_entry_id
          AND je.is_posted = true
-         AND je.reference_type != 'opening'   -- opening already in opening_debit/credit
+         AND je.reference_type != 'opening'
          AND ($2::date IS NULL OR je.entry_date >= $2)
          AND ($3::date IS NULL OR je.entry_date <= $3)
          
        WHERE a.company_id = $1
        
-       GROUP BY a.id, a.code, a.name, a.type, a.opening_debit, a.opening_credit
+       GROUP BY ${groupByCols}
        
-       -- CRITICAL FIX: Only show accounts that have ACTUAL activity
-       -- This prevents showing every account in the chart even with zero balances
        HAVING 
-         COALESCE(a.opening_debit, 0)  > 0.01 OR
-         COALESCE(a.opening_credit, 0) > 0.01 OR
+         ${openingDebitExpr}  > 0.01 OR
+         ${openingCreditExpr} > 0.01 OR
          COALESCE(SUM(jel.debit_amount),  0) > 0.01 OR
          COALESCE(SUM(jel.credit_amount), 0) > 0.01
        
@@ -79,15 +89,15 @@ router.get('/trial-balance', async (req, res) => {
     )
 
     // Calculate totals
-    const total_opening_debit  = rows.reduce((s, r) => s + parseFloat(r.opening_debit),  0)
+    const total_opening_debit = rows.reduce((s, r) => s + parseFloat(r.opening_debit), 0)
     const total_opening_credit = rows.reduce((s, r) => s + parseFloat(r.opening_credit), 0)
-    const total_period_debit   = rows.reduce((s, r) => s + parseFloat(r.period_debit),   0)
-    const total_period_credit  = rows.reduce((s, r) => s + parseFloat(r.period_credit),  0)
-    const total_closing_debit  = rows.reduce((s, r) => s + parseFloat(r.closing_debit),  0)
+    const total_period_debit = rows.reduce((s, r) => s + parseFloat(r.period_debit), 0)
+    const total_period_credit = rows.reduce((s, r) => s + parseFloat(r.period_credit), 0)
+    const total_closing_debit = rows.reduce((s, r) => s + parseFloat(r.closing_debit), 0)
     const total_closing_credit = rows.reduce((s, r) => s + parseFloat(r.closing_credit), 0)
 
     const is_balanced = Math.abs(total_closing_debit - total_closing_credit) < 0.01
-    
+
     res.json({
       accounts: rows,
       total_opening_debit,
@@ -100,9 +110,9 @@ router.get('/trial-balance', async (req, res) => {
       // Helpful debugging info
       balance_difference: (total_closing_debit - total_closing_credit).toFixed(2)
     })
-  } catch (err) { 
+  } catch (err) {
     console.error('Trial balance error:', err)
-    res.status(500).json({ error: err.message }) 
+    res.status(500).json({ error: err.message })
   }
 })
 
@@ -113,7 +123,7 @@ router.get('/trial-balance', async (req, res) => {
 router.get('/pl', async (req, res) => {
   const { company_id, from, to } = req.query
   if (!company_id) return res.status(400).json({ error: 'company_id required' })
-  
+
   try {
     const { rows } = await pool.query(
       `SELECT 
@@ -151,25 +161,25 @@ router.get('/pl', async (req, res) => {
        ORDER BY a.type DESC, a.code`,
       [company_id, from || null, to || null]
     )
-    
-    const revenue  = rows.filter(r => r.type === 'revenue')
+
+    const revenue = rows.filter(r => r.type === 'revenue')
     const expenses = rows.filter(r => r.type === 'expense')
-    
-    const total_revenue  = revenue.reduce((s, r)  => s + parseFloat(r.amount), 0)
+
+    const total_revenue = revenue.reduce((s, r) => s + parseFloat(r.amount), 0)
     const total_expenses = expenses.reduce((s, r) => s + parseFloat(r.amount), 0)
     const net_profit = total_revenue - total_expenses
-    
-    res.json({ 
-      revenue, 
-      expenses, 
-      total_revenue, 
-      total_expenses, 
-      net_profit, 
-      is_profit: net_profit >= 0 
+
+    res.json({
+      revenue,
+      expenses,
+      total_revenue,
+      total_expenses,
+      net_profit,
+      is_profit: net_profit >= 0
     })
-  } catch (err) { 
+  } catch (err) {
     console.error('P&L error:', err)
-    res.status(500).json({ error: err.message }) 
+    res.status(500).json({ error: err.message })
   }
 })
 
@@ -181,7 +191,7 @@ router.get('/pl', async (req, res) => {
 router.get('/balance-sheet', async (req, res) => {
   const { company_id, as_of } = req.query
   if (!company_id) return res.status(400).json({ error: 'company_id required' })
-  
+
   try {
     // Check if year-end closing entries have been posted
     const { rows: coRows } = await pool.query(
@@ -253,20 +263,20 @@ router.get('/balance-sheet', async (req, res) => {
       net_profit = parseFloat(plRows[0]?.net_profit || 0)
     }
 
-    const assets      = rows.filter(r => r.type === 'asset')
+    const assets = rows.filter(r => r.type === 'asset')
     const liabilities = rows.filter(r => r.type === 'liability')
-    const equity      = rows.filter(r => r.type === 'equity')
+    const equity = rows.filter(r => r.type === 'equity')
 
-    const total_assets      = assets.reduce((s, r)      => s + parseFloat(r.closing_balance), 0)
+    const total_assets = assets.reduce((s, r) => s + parseFloat(r.closing_balance), 0)
     const total_liabilities = liabilities.reduce((s, r) => s + parseFloat(r.closing_balance), 0)
-    const total_equity_accounts = equity.reduce((s, r)  => s + parseFloat(r.closing_balance), 0)
+    const total_equity_accounts = equity.reduce((s, r) => s + parseFloat(r.closing_balance), 0)
     const total_equity = total_equity_accounts + net_profit
 
     const is_balanced = Math.abs(total_assets - (total_liabilities + total_equity)) < 0.01
 
     res.json({
-      assets, 
-      liabilities, 
+      assets,
+      liabilities,
       equity,
       net_profit,
       closing_entries_posted,
@@ -276,9 +286,9 @@ router.get('/balance-sheet', async (req, res) => {
       is_balanced,
       balance_difference: (total_assets - (total_liabilities + total_equity)).toFixed(2)
     })
-  } catch (err) { 
+  } catch (err) {
     console.error('Balance sheet error:', err)
-    res.status(500).json({ error: err.message }) 
+    res.status(500).json({ error: err.message })
   }
 })
 
@@ -289,21 +299,21 @@ router.get('/balance-sheet', async (req, res) => {
 router.get('/ledger', async (req, res) => {
   const { company_id, account_code, from, to } = req.query
   if (!company_id) return res.status(400).json({ error: 'company_id required' })
-  
+
   try {
     // Fetch opening balances
     let obQuery = `SELECT a.code, a.type, a.opening_debit, a.opening_credit
                    FROM accounts a WHERE a.company_id=$1`
     const obParams = [company_id]
-    if (account_code) { 
+    if (account_code) {
       obParams.push(account_code)
-      obQuery += ` AND a.code=$${obParams.length}` 
+      obQuery += ` AND a.code=$${obParams.length}`
     }
     const { rows: obRows } = await pool.query(obQuery, obParams)
 
     const openingMap = {}
     obRows.forEach(r => {
-      const isDebitNature = ['asset','expense'].includes(r.type)
+      const isDebitNature = ['asset', 'expense'].includes(r.type)
       openingMap[r.code] = {
         type: r.type,
         opening: isDebitNature
@@ -333,17 +343,17 @@ router.get('/ledger', async (req, res) => {
         AND je.reference_type != 'opening'
     `
     const params = [company_id]
-    if (account_code) { 
+    if (account_code) {
       params.push(account_code)
-      query += ` AND a.code=$${params.length}` 
+      query += ` AND a.code=$${params.length}`
     }
-    if (from) { 
+    if (from) {
       params.push(from)
-      query += ` AND je.entry_date>=$${params.length}` 
+      query += ` AND je.entry_date>=$${params.length}`
     }
-    if (to) { 
+    if (to) {
       params.push(to)
-      query += ` AND je.entry_date<=$${params.length}` 
+      query += ` AND je.entry_date<=$${params.length}`
     }
     query += ' ORDER BY a.code, je.entry_date, je.entry_number'
 
@@ -355,17 +365,17 @@ router.get('/ledger', async (req, res) => {
       if (balanceMap[key] === undefined) {
         balanceMap[key] = openingMap[key]?.opening ?? 0
       }
-      const isDebitNature = ['asset','expense'].includes(r.account_type)
+      const isDebitNature = ['asset', 'expense'].includes(r.account_type)
       balanceMap[key] += isDebitNature
         ? parseFloat(r.debit_amount) - parseFloat(r.credit_amount)
         : parseFloat(r.credit_amount) - parseFloat(r.debit_amount)
       return { ...r, running_balance: balanceMap[key] }
     })
-    
+
     res.json(ledger)
-  } catch (err) { 
+  } catch (err) {
     console.error('Ledger error:', err)
-    res.status(500).json({ error: err.message }) 
+    res.status(500).json({ error: err.message })
   }
 })
 
@@ -376,7 +386,7 @@ router.get('/ledger', async (req, res) => {
 router.get('/gst-summary', async (req, res) => {
   const { company_id, month, year } = req.query
   if (!company_id) return res.status(400).json({ error: 'company_id required' })
-  
+
   try {
     const { rows } = await pool.query(
       `SELECT 
@@ -390,28 +400,28 @@ router.get('/gst-summary', async (req, res) => {
        FROM invoices
        WHERE company_id = $1 
          AND status != 'cancelled'
-         AND ($2::int IS NULL OR EXTRACT(MONTH FROM invoice_date) = $2)
-         AND ($3::int IS NULL OR EXTRACT(YEAR  FROM invoice_date) = $3)
+         AND ($2::numeric IS NULL OR EXTRACT(MONTH FROM invoice_date) = $2::numeric)
+         AND ($3::numeric IS NULL OR EXTRACT(YEAR  FROM invoice_date) = $3::numeric)
        GROUP BY invoice_type`,
       [company_id, month || null, year || null]
     )
-    
-    const sales    = rows.find(r => r.invoice_type === 'sale')     || {}
+
+    const sales = rows.find(r => r.invoice_type === 'sale') || {}
     const purchase = rows.find(r => r.invoice_type === 'purchase') || {}
-    
-    const output_tax = parseFloat(sales.total_cgst||0) + parseFloat(sales.total_sgst||0) + parseFloat(sales.total_igst||0)
-    const input_tax  = parseFloat(purchase.total_cgst||0) + parseFloat(purchase.total_sgst||0) + parseFloat(purchase.total_igst||0)
-    
-    res.json({ 
-      sales, 
-      purchase, 
-      output_tax, 
-      input_tax, 
-      net_payable: output_tax - input_tax 
+
+    const output_tax = parseFloat(sales.total_cgst || 0) + parseFloat(sales.total_sgst || 0) + parseFloat(sales.total_igst || 0)
+    const input_tax = parseFloat(purchase.total_cgst || 0) + parseFloat(purchase.total_sgst || 0) + parseFloat(purchase.total_igst || 0)
+
+    res.json({
+      sales,
+      purchase,
+      output_tax,
+      input_tax,
+      net_payable: output_tax - input_tax
     })
-  } catch (err) { 
+  } catch (err) {
     console.error('GST summary error:', err)
-    res.status(500).json({ error: err.message }) 
+    res.status(500).json({ error: err.message })
   }
 })
 
@@ -422,7 +432,7 @@ router.get('/gst-summary', async (req, res) => {
 router.get('/integrity-check', async (req, res) => {
   const { company_id } = req.query
   if (!company_id) return res.status(400).json({ error: 'company_id required' })
-  
+
   try {
     const results = {
       overall_status: 'pass',
@@ -452,11 +462,11 @@ router.get('/integrity-check', async (req, res) => {
        FROM accounts a WHERE company_id = $1`,
       [company_id]
     )
-    
+
     const tbDebit = parseFloat(tbRows[0].total_debit)
     const tbCredit = parseFloat(tbRows[0].total_credit)
     const tbBalanced = Math.abs(tbDebit - tbCredit) < 0.01
-    
+
     results.checks.push({
       name: 'Trial Balance',
       status: tbBalanced ? 'pass' : 'fail',
@@ -476,7 +486,7 @@ router.get('/integrity-check', async (req, res) => {
        HAVING ABS(COALESCE(SUM(jel.debit_amount), 0) - COALESCE(SUM(jel.credit_amount), 0)) > 0.01`,
       [company_id]
     )
-    
+
     results.checks.push({
       name: 'Journal Entry Balance',
       status: unbalancedJEs.length === 0 ? 'pass' : 'fail',
@@ -493,7 +503,7 @@ router.get('/integrity-check', async (req, res) => {
          AND ABS((taxable_amount + cgst_amount + sgst_amount + igst_amount) - total_amount) > 0.01`,
       [company_id]
     )
-    
+
     results.checks.push({
       name: 'Invoice Totals',
       status: badInvoices.length === 0 ? 'pass' : 'fail',
@@ -509,7 +519,7 @@ router.get('/integrity-check', async (req, res) => {
        WHERE je.id IS NULL OR jel.account_id IS NULL`,
       []
     )
-    
+
     results.checks.push({
       name: 'Orphan Journal Lines',
       status: orphanLines.length === 0 ? 'pass' : 'warning',
@@ -535,7 +545,7 @@ router.get('/integrity-check', async (req, res) => {
        FROM invoices WHERE company_id = $1 AND invoice_type = 'purchase' AND status != 'cancelled'`,
       [company_id, company_id]
     )
-    
+
     const gstMatches = gstCheck.every(r => Math.abs(parseFloat(r.invoice_gst) - parseFloat(r.journal_gst)) < 0.01)
     results.checks.push({
       name: 'GST Reconciliation',

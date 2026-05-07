@@ -108,8 +108,8 @@ router.post('/', async (req, res) => {
 
     for (const d of deadlines) {
       await client.query(
-        `INSERT INTO compliance_deadlines(company_id,type,name,due_date,financial_year,period,status) VALUES($1,$2,$3,$4,$5,NULL,'pending')`,
-        [company.id, d.type, d.name, d.due, fy]
+        `INSERT INTO compliance_deadlines(company_id,type,name,due_date,financial_year,period,status) VALUES($1,$2,$3,$4,$5,$6,$7)`,
+        [company.id, d.type, d.name, d.due, fy, null, 'pending']
       )
     }
 

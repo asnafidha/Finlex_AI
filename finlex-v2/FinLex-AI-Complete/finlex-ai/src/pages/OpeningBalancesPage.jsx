@@ -47,9 +47,21 @@ export default function OpeningBalancesPage() {
 
   const save = async () => {
     if (!asOfDate) return showToast('Select an "as of" date before saving', 'error')
+    // Backend expects { account_id, debit, credit } — split by account type
+    const accountTypeMap = {}
+    accounts.forEach(a => { accountTypeMap[a.id] = a.type })
     const balances = Object.entries(edits)
       .filter(([, v]) => parseFloat(v) !== 0)
-      .map(([account_id, amount]) => ({ account_id: parseInt(account_id), amount: parseFloat(amount) }))
+      .map(([account_id, value]) => {
+        const amt  = parseFloat(value)
+        const type = accountTypeMap[parseInt(account_id)]
+        const isDebitNature = ['asset', 'expense'].includes(type)
+        return {
+          account_id: parseInt(account_id),
+          debit:  isDebitNature ? Math.max(0,  amt) : Math.max(0, -amt),
+          credit: isDebitNature ? Math.max(0, -amt) : Math.max(0,  amt),
+        }
+      })
     if (!balances.length) return showToast('No balances to save', 'error')
     setSaving(true)
     try {

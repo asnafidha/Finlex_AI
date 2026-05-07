@@ -173,26 +173,15 @@ export default function DocumentPage() {
         setEditedData({ ...data.extracted }) // editable copy
         setStage('review')  // go to review step first, not auto-save
 
+        // Store multi-invoice data for batch save on confirm — NO auto-save
         if (data.multi_invoice && data.all_invoices?.length >= 1) {
-          setMultiResults([])
-          const results = []
-          for (let i = 0; i < data.all_invoices.length; i++) {
-            const inv = data.all_invoices[i]
-            try {
-              const r = await fetch(`${BASE_URL}/ai/ingest-invoice`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
-                body: JSON.stringify({ extracted: inv, company, file_name: `${file.name} [Page ${i + 1}]` }),
-              })
-              const d = await r.json()
-              results.push({ index: i + 1, invoice_number: inv.invoiceNo || `Invoice ${i + 1}`, vendor: inv.vendorName, success: r.ok && d.success !== false, message: d.error || 'Saved' })
-            } catch (e) {
-              results.push({ index: i + 1, invoice_number: inv.invoiceNo || `Invoice ${i + 1}`, vendor: inv.vendorName, success: false, message: e.message })
-            }
-            setMultiResults([...results])
-          }
-          setSaved(true)
-          setStage('done')
+          setMultiResults(data.all_invoices.map((inv, i) => ({
+            index: i + 1,
+            invoice_number: inv.invoiceNo || `Invoice ${i + 1}`,
+            vendor: inv.vendorName || '',
+            data: inv,
+            saved: false,
+          })))
         }
       } else {
         setBankItems(data.transactions || [])
@@ -242,6 +231,12 @@ export default function DocumentPage() {
 
   // ── Editable field update ─────────────────────────────────────
   const updateField = (field, value) => setEditedData(prev => ({ ...prev, [field]: value }))
+
+  // ── Field confidence — highlight uncertain fields when confidence < 85% ──
+  const uncertainFields = confidence !== null && confidence < 85
+    ? ['invoiceNo','date','vendorName','vendorGSTIN','buyerGSTIN','total'].filter(k => !editedData?.[k])
+    : []
+  const isUncertain = (key) => uncertainFields.includes(key)
 
   const confColor = confidence >= 85 ? '#16a34a' : confidence >= 60 ? '#ca8a04' : '#dc2626'
   const confLabel = confidence >= 85 ? 'High confidence' : confidence >= 60 ? 'Medium — review fields' : 'Low — please verify all fields'
@@ -401,11 +396,11 @@ export default function DocumentPage() {
                         value={editedData[key] || ''}
                         onChange={e => updateField(key, e.target.value)}
                         type={type || 'text'}
-                        style={{ flex: 1, fontSize: 13, color: 'var(--navy)', fontWeight: 500, border: '1px solid var(--gold)', borderRadius: 6, padding: '3px 8px', background: 'white', fontFamily: 'var(--font-body)', outline: 'none' }}
+                        style={{ flex: 1, fontSize: 13, color: 'var(--navy)', fontWeight: 500, border: `1px solid ${isUncertain(key) ? '#f59e0b' : 'var(--gold)'}`, borderRadius: 6, padding: '3px 8px', background: isUncertain(key) ? '#fffbeb' : 'white', fontFamily: 'var(--font-body)', outline: 'none' }}
                       />
                     ) : (
-                      <span style={{ fontSize: 13, color: editedData[key] ? 'var(--navy)' : 'var(--gray-400)', fontWeight: 500 }}>
-                        {editedData[key] || '—'}
+                      <span style={{ fontSize: 13, color: editedData[key] ? 'var(--navy)' : 'var(--gray-400)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {editedData[key] || (isUncertain(key) ? <span style={{ color: '#ca8a04', fontWeight: 600 }}>⚠️ Please fill</span> : '—')}
                       </span>
                     )}
                   </div>

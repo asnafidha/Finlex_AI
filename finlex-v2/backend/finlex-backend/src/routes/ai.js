@@ -4,7 +4,7 @@ const auth = require('../middleware/auth')
 
 router.use(auth)
 
-// ── Helper: fetch real company data ──────────────────────────
+//  Helper: fetch real company data 
 async function getCompanyContext(company_id) {
   try {
     const today = new Date()
@@ -33,8 +33,7 @@ async function getCompanyContext(company_id) {
               COALESCE(SUM(sgst_amount),0) as sgst,
               COALESCE(SUM(igst_amount),0) as igst
        FROM invoices WHERE company_id=$1 AND status!='cancelled'
-         AND EXTRACT(MONTH FROM invoice_date)=$2 AND EXTRACT(YEAR FROM invoice_date)=$3
-       GROUP BY invoice_type`,
+         AND EXTRACT(MONTH FROM invoice_date)=$2::numeric AND EXTRACT(YEAR FROM invoice_date)=$3::numeric`,
       [company_id, month, year]
     )
     const sales = gstRows.find(r => r.invoice_type === 'sale') || {}
@@ -44,53 +43,53 @@ async function getCompanyContext(company_id) {
     // These are debited when purchase invoices are created and credited when ITC is utilised
     const { rows: itcAccRows } = await pool.query(
       `SELECT a.code,
-              COALESCE(a.opening_balance,0)+COALESCE(SUM(jel.debit_amount),0)-COALESCE(SUM(jel.credit_amount),0) AS balance
+             COALESCE(a.opening_balance, 0) + COALESCE(SUM(jel.debit_amount), 0) - COALESCE(SUM(jel.credit_amount), 0) AS balance
        FROM accounts a
-       LEFT JOIN journal_entry_lines jel ON jel.account_id=a.id
-       LEFT JOIN journal_entries je ON je.id=jel.journal_entry_id AND je.is_posted=true
-       WHERE a.company_id=$1 AND a.code IN ('1004','1005','1006')
-       GROUP BY a.id,a.code,a.opening_balance`,
+       LEFT JOIN journal_entry_lines jel ON jel.account_id = a.id
+       LEFT JOIN journal_entries je ON je.id = jel.journal_entry_id AND je.is_posted = true
+       WHERE a.company_id = $1 AND a.code IN('1004', '1005', '1006')
+       GROUP BY a.id, a.code, a.opening_balance`,
       [company_id]
     )
     const input_tax = itcAccRows.reduce((s, r) => s + parseFloat(r.balance || 0), 0)
 
     const { rows: unpaidRows } = await pool.query(
-      `SELECT invoice_number,invoice_type,party_name,total_amount,due_date
-       FROM invoices WHERE company_id=$1 AND payment_status IN ('unpaid','partial') AND status!='cancelled'
+      `SELECT invoice_number, invoice_type, party_name, total_amount, due_date
+       FROM invoices WHERE company_id = $1 AND payment_status IN('unpaid', 'partial') AND status != 'cancelled'
        ORDER BY due_date ASC LIMIT 10`, [company_id]
     )
 
     const { rows: compRows } = await pool.query(
-      `SELECT name,type,due_date,status,
-              CEIL(EXTRACT(EPOCH FROM (due_date - NOW()))/86400) as days_left
-       FROM compliance_deadlines WHERE company_id=$1 ORDER BY due_date ASC LIMIT 15`, [company_id]
+      `SELECT name, type, due_date, status,
+             CEIL(EXTRACT(EPOCH FROM(due_date - NOW())) / 86400) as days_left
+       FROM compliance_deadlines WHERE company_id = $1 ORDER BY due_date ASC LIMIT 15`, [company_id]
     )
     const overdue = compRows.filter(r => r.status === 'pending' && parseFloat(r.days_left) < 0)
     const upcoming = compRows.filter(r => r.status === 'pending' && parseFloat(r.days_left) >= 0)
     const completed = compRows.filter(r => r.status === 'completed')
 
     const { rows: tdsRows } = await pool.query(
-      `SELECT section,COUNT(*) as count,SUM(gross_amount) as gross,SUM(tds_amount) as tds
-       FROM tds_entries WHERE company_id=$1 GROUP BY section ORDER BY tds DESC`, [company_id]
+      `SELECT section, COUNT(*) as count, SUM(gross_amount) as gross, SUM(tds_amount) as tds
+       FROM tds_entries WHERE company_id = $1 GROUP BY section ORDER BY tds DESC`, [company_id]
     )
     const total_tds = tdsRows.reduce((s, r) => s + parseFloat(r.tds || 0), 0)
 
     const { rows: bankRows } = await pool.query(
-      `SELECT a.code,a.name,
-              COALESCE(a.opening_balance,0)+COALESCE(SUM(jel.debit_amount),0)-COALESCE(SUM(jel.credit_amount),0) AS balance
+      `SELECT a.code, a.name,
+      COALESCE(a.opening_balance, 0) + COALESCE(SUM(jel.debit_amount), 0) - COALESCE(SUM(jel.credit_amount), 0) AS balance
        FROM accounts a
-       LEFT JOIN journal_entry_lines jel ON jel.account_id=a.id
-       LEFT JOIN journal_entries je ON je.id=jel.journal_entry_id AND je.is_posted=true
-       WHERE a.company_id=$1 AND a.code IN ('1001','1002')
-       GROUP BY a.id,a.code,a.name,a.opening_balance`, [company_id]
+       LEFT JOIN journal_entry_lines jel ON jel.account_id = a.id
+       LEFT JOIN journal_entries je ON je.id = jel.journal_entry_id AND je.is_posted = true
+       WHERE a.company_id = $1 AND a.code IN('1001', '1002')
+       GROUP BY a.id, a.code, a.name, a.opening_balance`, [company_id]
     )
 
     const { rows: invSummary } = await pool.query(
-      `SELECT invoice_type,COUNT(*) as total,
-              COUNT(*) FILTER (WHERE payment_status='paid') as paid,
-              COUNT(*) FILTER (WHERE payment_status='unpaid') as unpaid,
-              COALESCE(SUM(total_amount),0) as total_amount
-       FROM invoices WHERE company_id=$1 AND status!='cancelled' GROUP BY invoice_type`, [company_id]
+      `SELECT invoice_type, COUNT(*) as total,
+      COUNT(*) FILTER(WHERE payment_status = 'paid') as paid,
+      COUNT(*) FILTER(WHERE payment_status = 'unpaid') as unpaid,
+      COALESCE(SUM(total_amount), 0) as total_amount
+       FROM invoices WHERE company_id = $1 AND status != 'cancelled' GROUP BY invoice_type`, [company_id]
     )
 
     return {
@@ -109,13 +108,13 @@ async function getCompanyContext(company_id) {
 }
 
 
-// ── Helper: fetch ALL companies for CA users ─────────────────
+//  Helper: fetch ALL companies for CA users 
 async function getCAContext(userId) {
   try {
     const { rows: companies } = await pool.query(
       `SELECT c.id, c.name, c.gstin FROM companies c
-       JOIN ca_company_access cca ON cca.company_id=c.id
-       WHERE cca.ca_id=$1`, [userId]
+       JOIN ca_company_access cca ON cca.company_id = c.id
+       WHERE cca.ca_id = $1`, [userId]
     )
     if (!companies.length) return null
     const summaries = []
@@ -138,7 +137,7 @@ async function getCAContext(userId) {
   } catch { return null }
 }
 
-// ── POST /api/ai/chat ─────────────────────────────────────────
+//  POST /api/ai/chat 
 router.post('/chat', async (req, res) => {
   const { messages, company } = req.body
   if (!messages || !messages.length)
@@ -155,9 +154,10 @@ router.post('/chat', async (req, res) => {
     caData = await getCAContext(req.user.id)
 
     const d = companyData
-    const systemPrompt = `You are FinLex AI, an expert CA assistant for Indian businesses. You specialize in GST, TDS, ITR, Indian tax law, accounting, and ROC compliance.
-${company ? `\nCOMPANY: ${company.name} | GSTIN: ${company.gstin || 'N/A'} | State: ${company.state_name || 'N/A'} | FY: ${company.financial_year || '2024-25'}` : ''}
-${d && Object.keys(d).length > 0 ? `
+    const systemPrompt = `You are FinLex AI, an expert CA assistant for Indian businesses.You specialize in GST, TDS, ITR, Indian tax law, accounting, and ROC compliance.
+      ${ company ? `\nCOMPANY: ${company.name} | GSTIN: ${company.gstin || 'N/A'} | State: ${company.state_name || 'N/A'} | FY: ${company.financial_year || '2024-25'}` : '' }
+${
+      d && Object.keys(d).length > 0 ? `
 REAL FINANCIAL DATA:
 P&L: Revenue ₹${d.financial_summary?.total_revenue?.toLocaleString('en-IN')} | Expenses ₹${d.financial_summary?.total_expense?.toLocaleString('en-IN')} | Net Profit ₹${d.financial_summary?.net_profit?.toLocaleString('en-IN')}
 Revenue: ${d.financial_summary?.revenue_breakdown?.map(r => `${r.account} ₹${r.amount?.toLocaleString('en-IN')}`).join(', ')}
@@ -168,16 +168,19 @@ COMPLIANCE: ${d.compliance?.total_overdue} overdue | Overdue: ${d.compliance?.ov
 TDS: ₹${d.tds?.total_tds_deducted?.toLocaleString('en-IN')} | ${d.tds?.by_section?.map(t => `${t.section} ₹${t.tds?.toLocaleString('en-IN')}`).join(', ') || 'None'}
 CASH & BANK: ${d.cash_and_bank?.map(b => `${b.account} ₹${b.balance?.toLocaleString('en-IN')}`).join(' | ') || 'N/A'}
 INVOICES: ${d.invoice_summary?.map(i => `${i.type}: ${i.total} total, ${i.unpaid} unpaid, ₹${i.total_amount?.toLocaleString('en-IN')}`).join(' | ') || 'N/A'}
-` : ''}
-Always use real data when answering. Keep responses concise. Use ₹ for amounts. Use bullet points where helpful.
-${caData && caData.length > 0 ? `
+` : ''
+    }
+Always use real data when answering.Keep responses concise.Use ₹ for amounts.Use bullet points where helpful.
+      ${
+        caData && caData.length > 0 ? `
 CA PORTFOLIO — ${caData.length} client${caData.length > 1 ? 's' : ''}:
 ${caData.map(c => `• ${c.company}: Revenue ₹${(c.revenue || 0).toLocaleString('en-IN')} | Profit ₹${(c.net_profit || 0).toLocaleString('en-IN')} | TDS ₹${(c.tds_total || 0).toLocaleString('en-IN')} | Overdue: ${c.overdue_compliances} | Unpaid invoices: ${c.unpaid_invoices}`).join('\n')}
-` : ''}`
+` : ''
+    } `
 
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ process.env.GROQ_API_KEY } ` },
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         max_tokens: 1000,
@@ -194,7 +197,7 @@ ${caData.map(c => `• ${c.company}: Revenue ₹${(c.revenue || 0).toLocaleStrin
   }
 })
 
-// ── GST Treatment classifier ──────────────────────────────────
+//  GST Treatment classifier 
 function classifyGST(desc, category, amount) {
   const d = (desc || '').toLowerCase()
   const c = (category || '').toLowerCase()
@@ -220,7 +223,7 @@ function classifyGST(desc, category, amount) {
   return 'Verify — Check GST Applicability'
 }
 
-// ── Document type classifier ──────────────────────────────────
+//  Document type classifier 
 function classifyDocument(text) {
   const t = text.toLowerCase()
 
@@ -252,7 +255,7 @@ function classifyDocument(text) {
   return 'unknown'
 }
 
-// ── Vision OCR helper — calls Claude vision API ───────────────
+//  Vision OCR helper — calls Claude vision API 
 async function extractWithVision(base64Data, mimeType) {
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -274,13 +277,18 @@ async function extractWithVision(base64Data, mimeType) {
             },
             {
               type: 'text',
-              text: `Extract all invoice data from this image. Return ONLY valid JSON, no explanation, no markdown, no backticks:
-{"invoiceNo":"","date":"YYYY-MM-DD","vendorName":"","vendorGSTIN":"","buyerName":"","buyerGSTIN":"","placeOfSupply":"","invoiceType":"purchase","items":[{"desc":"","hsn":"","qty":1,"rate":0,"gstRate":18}],"subtotal":0,"cgst":0,"sgst":0,"igst":0,"total":0,"warnings":[]}
+              text: `Extract all invoice data from this image.Return ONLY valid JSON, no explanation, no markdown, no backticks:
+    { "invoiceNo": "", "date": "YYYY-MM-DD", "vendorName": "", "vendorGSTIN": "", "buyerName": "", "buyerGSTIN": "", "placeOfSupply": "", "invoiceType": "purchase", "items": [{ "desc": "", "hsn": "", "qty": 1, "rate": 0, "gstRate": 18 }], "subtotal": 0, "cgst": 0, "sgst": 0, "igst": 0, "total": 0, "warnings": [] }
 
-If this is a bank statement or receipt (not an invoice), return:
-{"detected_type":"bank","transactions":[{"date":"YYYY-MM-DD","desc":"","amount":0,"category":"Other"}]}
+    CRITICAL - invoiceType detection:
+    - Set invoiceType = "sale" if: invoice number starts with SAL / INV / SALES, vendorName matches the buyer company, or document says "Tax Invoice" issued BY the company TO a customer
+      - Set invoiceType = "purchase" if: invoice number starts with PUR / BILL / VENDOR, or document is a bill FROM a vendor TO the company
+        - Default to "purchase" only if truly unclear
 
-Return ONLY the JSON object. No text before or after.`
+If this is a bank statement or receipt(not an invoice), return:
+    { "detected_type": "bank", "transactions": [{ "date": "YYYY-MM-DD", "desc": "", "amount": 0, "category": "Other" }] }
+
+Return ONLY the JSON object.No text before or after.`
             }
           ]
         }]
@@ -288,21 +296,21 @@ Return ONLY the JSON object. No text before or after.`
     })
     const data = await response.json()
     if (!response.ok) throw new Error(data.error?.message || 'Vision API error')
-    const content = data.content?.[0]?.text || ''
-    const cleaned = content.replace(/```json/gi, '').replace(/```/g, '').trim()
+    const content = data.content?.[0]?.text || ""
+    const cleaned = content.replace(/```json/gi, "").replace(/```/g, "").trim()
     return JSON.parse(cleaned)
   } catch (err) {
-    throw new Error('Vision OCR failed: ' + err.message)
+    throw new Error('Vision extraction failed: ' + err.message)
   }
 }
 
-// ── POST /api/ai/extract-document ────────────────────────────
+//  POST /api/ai/extract-document 
 // Frontend sends either text_content (digital PDF) OR vision_base64 (scanned/image)
 router.post('/extract-document', async (req, res) => {
   const { tab, file_name, text_content, page_texts, vision_base64, vision_mime, use_vision } = req.body
 
   try {
-    // ── Vision OCR path: scanned PDF or image file ────────────
+    //  Vision OCR path: scanned PDF or image file 
     if (use_vision && vision_base64) {
       let parsed
       try {
@@ -331,7 +339,7 @@ router.post('/extract-document', async (req, res) => {
       })
     }
 
-    // ── Multi-page PDF: process each page independently ───────
+    //  Multi-page PDF: process each page independently 
     if (page_texts && Array.isArray(page_texts) && page_texts.length > 1) {
       const results = []
       for (let i = 0; i < page_texts.length; i++) {
@@ -355,6 +363,8 @@ router.post('/extract-document', async (req, res) => {
                 {
                   role: 'user', content: `Extract invoice data from this page. Return ONLY valid JSON:
 {"invoiceNo":"","date":"YYYY-MM-DD","vendorName":"","vendorGSTIN":"","buyerName":"","buyerGSTIN":"","placeOfSupply":"","invoiceType":"purchase","items":[{"desc":"","hsn":"","qty":1,"rate":0,"gstRate":18}],"subtotal":0,"cgst":0,"sgst":0,"igst":0,"total":0,"warnings":[]}
+
+CRITICAL - invoiceType: set "sale" if invoice number has SAL/INV prefix OR vendor is the same company. Set "purchase" if it is a bill from external vendor.
 
 Page text:
 ${pageContent.slice(0, 4000)}`
@@ -393,7 +403,7 @@ ${pageContent.slice(0, 4000)}`
       return res.status(400).json({ error: 'No text content received. For scanned PDFs (image-only), text extraction is not supported — please use a digital/selectable PDF or a CSV file.' })
     }
 
-    // ── Auto-classify document type ───────────────────────────
+    //  Auto-classify document type 
     let detected = classifyDocument(content)
 
     // Fallback: use filename hints
@@ -407,7 +417,7 @@ ${pageContent.slice(0, 4000)}`
     // If user explicitly chose a tab and classifier is uncertain, respect user
     if (detected === 'unknown') detected = tab
 
-    // ── Build prompt based on detected type ───────────────────
+    //  Build prompt based on detected type 
     let prompt = ''
 
     if (detected === 'invoice') {
@@ -418,6 +428,11 @@ If the document has only ONE invoice, return a single JSON object (NOT an array)
 
 Format for each invoice:
 {"invoiceNo":"","date":"YYYY-MM-DD","vendorName":"","vendorGSTIN":"","buyerName":"","buyerGSTIN":"","placeOfSupply":"","invoiceType":"purchase","items":[{"desc":"","hsn":"","qty":1,"rate":0,"gstRate":18}],"subtotal":0,"cgst":0,"sgst":0,"igst":0,"total":0,"warnings":[]}
+
+CRITICAL - invoiceType detection rules:
+- "sale" if: invoice number starts with SAL/INV/SALES, or the vendorGSTIN matches the buyer company GSTIN, or it is clearly a Tax Invoice issued TO a customer
+- "purchase" if: invoice number starts with PUR/BILL, or it is a bill/invoice received FROM a vendor
+- When unclear, check invoice number prefix: SAL=sale, PUR=purchase
 
 Multiple invoices: [{...invoice1...},{...invoice2...}]
 Single invoice: {...invoice...}
@@ -466,9 +481,19 @@ Return ONLY the JSON array.`
     try {
       parsed = JSON.parse(rawText)
     } catch (e) {
-      const jsonMatch = rawText.match(/(\{[\s\S]*\}|\[[\s\S]*\])/)
-      if (jsonMatch) parsed = JSON.parse(jsonMatch[0])
-      else return res.status(500).json({ error: 'AI could not extract structured data. Try a clearer or digital PDF, or use CSV format.' })
+      // Primary parse failed — try extracting JSON substring
+      try {
+        const jsonMatch = rawText.match(/(\{[\s\S]*\}|\[[\s\S]*\])/)
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0])
+        } else {
+          console.error('AI raw response (no JSON found):', rawText.slice(0, 300))
+          return res.status(500).json({ error: 'AI could not extract structured data. Try a clearer or digital PDF, or use CSV format.' })
+        }
+      } catch (e2) {
+        console.error('AI raw response (JSON parse failed):', rawText.slice(0, 300))
+        return res.status(500).json({ error: 'AI returned malformed data. Please try again or use a different file format.' })
+      }
     }
 
     if (detected === 'invoice') {
@@ -494,7 +519,7 @@ Return ONLY the JSON array.`
   }
 })
 
-// ── POST /api/ai/ingest-invoice ──────────────────────────────
+//  POST /api/ai/ingest-invoice 
 // Autonomous pipeline: extracted JSON → invoice → journal → ITC → compliance → TDS → audit
 router.post('/ingest-invoice', async (req, res) => {
   const { extracted, company, file_name } = req.body
@@ -511,15 +536,43 @@ router.post('/ingest-invoice', async (req, res) => {
     const company_id = company.id
     const userId = req.user.id
 
-    // ── 1. Resolve company state ──────────────────────────────
+    //  0. Guard: FY lock 
+    const { rows: fyRows } = await client.query(
+      'SELECT fy_locked, financial_year FROM companies WHERE id=$1', [company_id]
+    )
+    if (fyRows.length && fyRows[0].fy_locked) {
+      await client.query('ROLLBACK')
+      return res.status(423).json({
+        error: `Financial year ${fyRows[0].financial_year} is locked. AI ingest is blocked during a locked FY.`,
+        fy_locked: true, code: 'FY_LOCKED'
+      })
+    }
+
+    //  0b. Guard: Period lock 
+    const entryDate = extracted.date || new Date().toISOString().split('T')[0]
+    const { rows: periodRows } = await client.query(
+      `SELECT id, period_name FROM financial_periods
+       WHERE company_id=$1 AND $2 BETWEEN start_date AND end_date AND is_closed=true LIMIT 1`,
+      [company_id, entryDate]
+    )
+    if (periodRows.length > 0) {
+      await client.query('ROLLBACK')
+      return res.status(400).json({
+        error: 'Period is locked',
+        details: `Period "${periodRows[0].period_name}" is closed. AI ingest blocked for date ${entryDate}.`
+      })
+    }
+
+    //  1. Resolve company state 
     const { rows: [comp] } = await client.query(
       'SELECT state_code FROM companies WHERE id=$1', [company_id]
     )
+
     const companyState = comp?.state_code || ''
     const partyState = extracted.placeOfSupply || companyState
     const isInterState = partyState && companyState && partyState !== companyState
 
-    // ── 2. Build line items with GST ─────────────────────────
+    //  2. Build line items with GST 
     let subtotal = 0, totalCgst = 0, totalSgst = 0, totalIgst = 0
     const items = (extracted.items || []).map(item => {
       const taxable = parseFloat(item.qty || 1) * parseFloat(item.rate || 0)
@@ -550,13 +603,14 @@ router.post('/ingest-invoice', async (req, res) => {
       totalIgst = parseFloat(extracted.igst || 0)
       subtotal = parseFloat(extracted.subtotal || 0)
     }
-    const totalAmount = parseFloat(extracted.total || 0) || (subtotal + totalCgst + totalSgst + totalIgst)
+    // ALWAYS recalculate from items — never trust AI total (AI confuses net-of-TDS with gross total)
+    const totalAmount = subtotal + totalCgst + totalSgst + totalIgst
 
-    // ── 3. Create Invoice ─────────────────────────────────────
+    //  3. Create Invoice 
     const invNum = extracted.invoiceNo || `DOC-${Date.now()}`
     // Check duplicate
     const { rows: dup } = await client.query(
-      'SELECT id FROM invoices WHERE company_id=$1 AND invoice_number=$2',
+      `SELECT id FROM invoices WHERE company_id=$1 AND invoice_number=$2 AND status != 'cancelled'`,
       [company_id, invNum]
     )
     if (dup.length) {
@@ -571,16 +625,25 @@ router.post('/ingest-invoice', async (req, res) => {
         party_name,party_gstin,party_state,
         subtotal,taxable_amount,cgst_amount,sgst_amount,igst_amount,
         total_amount,notes,status,payment_status)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$8,$9,$10,$11,$12,$13,'confirmed','unpaid')
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'confirmed','unpaid')
        RETURNING *`,
       [company_id,
-        extracted.invoiceType || 'purchase',
+        (() => {
+          const t = (extracted.invoiceType || 'purchase').toLowerCase().trim()
+          if (t === 'sales') return 'sale'
+          if (t === 'purchases') return 'purchase'
+          if (t === 'sale' || t === 'purchase') return t
+          // Also check invoice number prefix as fallback
+          const num = (extracted.invoiceNo || '').toUpperCase()
+          if (num.startsWith('SAL') || num.startsWith('INV')) return 'sale'
+          return 'purchase'
+        })(),
         invNum,
         extracted.date || new Date().toISOString().split('T')[0],
         extracted.vendorName || extracted.buyerName || 'Unknown Party',
         extracted.vendorGSTIN || extracted.buyerGSTIN || null,
         partyState,
-        subtotal, totalCgst, totalSgst, totalIgst, totalAmount,
+        subtotal, subtotal, totalCgst, totalSgst, totalIgst, totalAmount,
         `Auto-ingested from: ${file_name || 'document'}`]
     )
     pipeline.push('invoice_created')
@@ -598,7 +661,7 @@ router.post('/ingest-invoice', async (req, res) => {
       )
     }
 
-    // ── 4. Auto Journal Entry ─────────────────────────────────
+    //  4. Auto Journal Entry 
     const getAcc = async (code) => {
       const { rows } = await client.query(
         'SELECT id FROM accounts WHERE company_id=$1 AND code=$2', [company_id, code]
@@ -644,7 +707,7 @@ router.post('/ingest-invoice', async (req, res) => {
     }
     pipeline.push('journal_entry_created')
 
-    // ── 5. ITC Register — auto-flag claimable ITC ─────────────
+    //  5. ITC Register — auto-flag claimable ITC 
     const totalITC = totalCgst + totalSgst + totalIgst
     let itcStatus = null
     if (!isSale && totalITC > 0) {
@@ -658,7 +721,7 @@ router.post('/ingest-invoice', async (req, res) => {
       pipeline.push('itc_recorded')
     }
 
-    // ── 6. Compliance Calendar — add GSTR-3B deadline if GST found ──
+    //  6. Compliance Calendar — add GSTR-3B deadline if GST found 
     if (totalITC > 0 || (isSale && (totalCgst + totalSgst + totalIgst) > 0)) {
       const invDate = new Date(invoice.invoice_date)
       const nextMonth = new Date(invDate.getFullYear(), invDate.getMonth() + 1, 20)
@@ -684,7 +747,7 @@ router.post('/ingest-invoice', async (req, res) => {
       }
     }
 
-    // ── 7. TDS Detection — auto-create TDS entry + journal if applicable ──
+    //  7. TDS Detection — auto-create TDS entry + journal if applicable 
     let tdsHint = null
     const vendorName = (invoice.party_name || '').toLowerCase()
     const TDS_KEYWORDS = [
@@ -709,10 +772,10 @@ router.post('/ingest-invoice', async (req, res) => {
 
           // Auto-save to tds_entries
           await client.query(
-            `INSERT INTO tds_entries(company_id,party_name,section,gross_amount,tds_rate,tds_amount,net_amount,payment_date,payment_nature,created_by)
-             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+            `INSERT INTO tds_entries(company_id,party_name,section,gross_amount,tds_rate,tds_amount,net_amount,payment_date,payment_nature,invoice_id,created_by)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
             [company_id, invoice.party_name, section, subtotal, rate, tdsAmount, netPayable,
-              invoice.invoice_date, nature, userId]
+              invoice.invoice_date, nature, invoice.id, userId]
           )
 
           // Auto TDS journal: reduce Accounts Payable by TDS amount, park in TDS Payable
@@ -753,12 +816,13 @@ router.post('/ingest-invoice', async (req, res) => {
       }
     }
 
-    // ── 8. Audit Log ──────────────────────────────────────────
+    //  8. Audit Log 
     await client.query(
-      `INSERT INTO audit_log(company_id,user_id,action,table_name,record_id,new_values)
-       VALUES($1,$2,'AI_DOCUMENT_INGESTED','invoices',$3,$4)`,
+      `INSERT INTO audit_log(company_id,user_id,action,table_name,record_id,new_values,ip_address)
+       VALUES($1,$2,'AI Ingested','invoices',$3,$4,$5)`,
       [company_id, userId, invoice.id,
-        JSON.stringify({ file_name, pipeline, vendor: invoice.party_name, amount: totalAmount })]
+        JSON.stringify({ file_name, pipeline, vendor: invoice.party_name, amount: totalAmount }),
+        req.ip || req.headers['x-forwarded-for'] || null]
     )
     pipeline.push('audit_logged')
 
@@ -783,7 +847,7 @@ router.post('/ingest-invoice', async (req, res) => {
   }
 })
 
-// ── POST /api/ai/ingest-bank ─────────────────────────────────
+//  POST /api/ai/ingest-bank 
 // Bank statement transactions → journal entries + bank balance update
 router.post('/ingest-bank', async (req, res) => {
   const { transactions, company } = req.body
@@ -944,7 +1008,7 @@ router.post('/ingest-bank', async (req, res) => {
 })
 
 module.exports = router
-// ── GST & TAX RULES KNOWLEDGE BASE (RAG source) ──────────────────────────────
+//  GST & TAX RULES KNOWLEDGE BASE (RAG source) 
 // This is the static rules corpus. In production, replace with vector DB + CBDT/GSTN circulars.
 const TAX_RULES_KB = `
 === INCOME TAX — FY 2024-25 (Finance Act 2024) ===
@@ -994,7 +1058,7 @@ Professional Tax: State-specific; Maharashtra max ₹2,500/year; deductible unde
 234C: Q1 shortfall (paid<15%): 1%/month×3; Q2 (paid<45%): 1%/month×3; Q3 (paid<75%): 1%/month×3; Q4 (paid<100%): 1%/month×1
 `
 
-// ── POST /api/ai/compliance-check — RAG-based rule check ──────────────────────
+//  POST /api/ai/compliance-check — RAG-based rule check 
 // Checks company's actual data against tax laws and returns violations/warnings
 router.post('/compliance-check', async (req, res) => {
   const { company_id, check_types = ['gst', 'tds', 'advance_tax'] } = req.body
@@ -1025,22 +1089,22 @@ router.post('/compliance-check', async (req, res) => {
 
       // Check for GSTR-1 overdue (past month)
       const prevMonth = today.getMonth() === 0 ? 12 : today.getMonth()
-      const prevYear  = today.getMonth() === 0 ? today.getFullYear()-1 : today.getFullYear()
-      const gstr1Due  = new Date(today.getFullYear(), today.getMonth(), 11)
+      const prevYear = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear()
+      const gstr1Due = new Date(today.getFullYear(), today.getMonth(), 11)
       if (today > gstr1Due) {
         const { rows: prevMonthInv } = await pool.query(
           `SELECT COUNT(*) as cnt FROM invoices WHERE company_id=$1 AND invoice_type='sale' AND status!='cancelled'
-           AND EXTRACT(MONTH FROM invoice_date)=$2 AND EXTRACT(YEAR FROM invoice_date)=$3`,
+           AND EXTRACT(MONTH FROM invoice_date)=$2::numeric AND EXTRACT(YEAR FROM invoice_date)=$3::numeric`,
           [company_id, prevMonth, prevYear]
         )
         if (parseInt(prevMonthInv[0].cnt) > 0) {
           const { rows: gstr1Filed } = await pool.query(
             `SELECT COUNT(*) as cnt FROM compliance_deadlines WHERE company_id=$1 AND type='GST' AND status='completed'
              AND name LIKE '%GSTR-1%' AND due_date BETWEEN $2 AND $3`,
-            [company_id, `${prevYear}-${String(prevMonth).padStart(2,'0')}-01`, `${prevYear}-${String(prevMonth).padStart(2,'0')}-30`]
+            [company_id, `${prevYear}-${String(prevMonth).padStart(2, '0')}-01`, `${prevYear}-${String(prevMonth).padStart(2, '0')}-30`]
           )
           if (parseInt(gstr1Filed[0].cnt) === 0) {
-            issues.push({ severity: 'critical', category: 'GST', issue: `GSTR-1 for ${new Date(prevYear, prevMonth-1).toLocaleString('en-IN',{month:'long',year:'numeric'})} may be unfiled. ${prevMonthInv[0].cnt} invoices exist for that month.`, law: 'CGST Sec 37 — GSTR-1 due 11th of following month', action: 'File GSTR-1 immediately to avoid ₹50/day late fee' })
+            issues.push({ severity: 'critical', category: 'GST', issue: `GSTR-1 for ${new Date(prevYear, prevMonth - 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' })} may be unfiled. ${prevMonthInv[0].cnt} invoices exist for that month.`, law: 'CGST Sec 37 — GSTR-1 due 11th of following month', action: 'File GSTR-1 immediately to avoid ₹50/day late fee' })
           }
         }
       }
@@ -1054,7 +1118,7 @@ router.post('/compliance-check', async (req, res) => {
         [company_id]
       )
       if (lateCN.length > 0) {
-        issues.push({ severity: 'critical', category: 'GST', issue: `${lateCN.length} credit note(s) issued after CGST Sec 34 time limit.`, notes: lateCN.map(n=>n.note_number).join(', '), law: 'CGST Sec 34 — Credit note by Sep 30 of next FY' })
+        issues.push({ severity: 'critical', category: 'GST', issue: `${lateCN.length} credit note(s) issued after CGST Sec 34 time limit.`, notes: lateCN.map(n => n.note_number).join(', '), law: 'CGST Sec 34 — Credit note by Sep 30 of next FY' })
       }
     }
 
@@ -1067,7 +1131,7 @@ router.post('/compliance-check', async (req, res) => {
         [company_id]
       )
       if (parseInt(noPan[0].cnt) > 0) {
-        issues.push({ severity: 'warning', category: 'TDS', issue: `${noPan[0].cnt} TDS entries (₹${parseFloat(noPan[0].total_tds||0).toLocaleString('en-IN')}) without PAN. Rate should be max(section rate, 20%) per Sec 206AA.`, law: 'Sec 206AA — PAN mandatory, else max(rate,20%)', action: 'Collect PAN from all payees' })
+        issues.push({ severity: 'warning', category: 'TDS', issue: `${noPan[0].cnt} TDS entries (₹${parseFloat(noPan[0].total_tds || 0).toLocaleString('en-IN')}) without PAN. Rate should be max(section rate, 20%) per Sec 206AA.`, law: 'Sec 206AA — PAN mandatory, else max(rate,20%)', action: 'Collect PAN from all payees' })
       }
 
       // Check undeposited TDS
@@ -1078,7 +1142,7 @@ router.post('/compliance-check', async (req, res) => {
         [company_id]
       )
       if (undeposited.length > 0) {
-        const totalUndeposited = undeposited.reduce((s,r) => s + parseFloat(r.tds||0), 0)
+        const totalUndeposited = undeposited.reduce((s, r) => s + parseFloat(r.tds || 0), 0)
         issues.push({ severity: 'critical', category: 'TDS', issue: `₹${totalUndeposited.toLocaleString('en-IN')} TDS deducted but NOT deposited to government.`, sections: undeposited, law: 'Sec 201 — Non-deposit attracts interest 1.5%/month + penalty equal to TDS amount', action: 'Deposit via challan ITNS 281 immediately' })
       }
 
@@ -1088,7 +1152,7 @@ router.post('/compliance-check', async (req, res) => {
       }
 
       // Check 194C aggregate
-      const fyStart = today.getMonth() >= 3 ? `${today.getFullYear()}-04-01` : `${today.getFullYear()-1}-04-01`
+      const fyStart = today.getMonth() >= 3 ? `${today.getFullYear()}-04-01` : `${today.getFullYear() - 1}-04-01`
       const { rows: contractorAgg } = await pool.query(
         `SELECT party_name, SUM(gross_amount) as total, COUNT(*) as payments
          FROM tds_entries WHERE company_id=$1 AND section='194C' AND payment_date >= $2
@@ -1114,16 +1178,16 @@ router.post('/compliance-check', async (req, res) => {
          JOIN accounts a ON a.id=jel.account_id
          WHERE je.company_id=$1`, [company_id]
       )
-      const net_profit = parseFloat(plRows[0].revenue||0) - parseFloat(plRows[0].expenses||0)
-      const taxable    = Math.max(0, net_profit - 75000)
+      const net_profit = parseFloat(plRows[0].revenue || 0) - parseFloat(plRows[0].expenses || 0)
+      const taxable = Math.max(0, net_profit - 75000)
 
       // Quick new regime tax estimate
       let est_tax = 0
-      if (taxable > 1500000)      est_tax = (taxable - 1500000) * 0.30 + 150000
+      if (taxable > 1500000) est_tax = (taxable - 1500000) * 0.30 + 150000
       else if (taxable > 1200000) est_tax = (taxable - 1200000) * 0.20 + 90000
       else if (taxable > 1000000) est_tax = (taxable - 1000000) * 0.15 + 60000
-      else if (taxable > 700000)  est_tax = (taxable - 700000)  * 0.10 + 20000
-      else if (taxable > 300000)  est_tax = (taxable - 300000)  * 0.05
+      else if (taxable > 700000) est_tax = (taxable - 700000) * 0.10 + 20000
+      else if (taxable > 300000) est_tax = (taxable - 300000) * 0.05
       const rebate = taxable <= 700000 ? Math.min(est_tax, 25000) : 0
       const total_est_tax = Math.round((est_tax - rebate) * 1.04)
 
@@ -1138,9 +1202,9 @@ router.post('/compliance-check', async (req, res) => {
 
         const month = today.getMonth() + 1
         if (month > 6 && month <= 9 && adv_paid < total_est_tax * 0.45) {
-          issues.push({ severity: 'warning', category: 'Advance Tax', issue: `Estimated tax: ₹${total_est_tax.toLocaleString('en-IN')}. Paid: ₹${adv_paid.toLocaleString('en-IN')}. Q2 instalment (45% = ₹${Math.round(total_est_tax*0.45).toLocaleString('en-IN')}) due Sep 15.`, law: 'Sec 208/234C — 45% by Sep 15', action: `Pay ₹${Math.max(0, Math.round(total_est_tax*0.45) - adv_paid).toLocaleString('en-IN')} advance tax via challan ITNS 280` })
+          issues.push({ severity: 'warning', category: 'Advance Tax', issue: `Estimated tax: ₹${total_est_tax.toLocaleString('en-IN')}. Paid: ₹${adv_paid.toLocaleString('en-IN')}. Q2 instalment (45% = ₹${Math.round(total_est_tax * 0.45).toLocaleString('en-IN')}) due Sep 15.`, law: 'Sec 208/234C — 45% by Sep 15', action: `Pay ₹${Math.max(0, Math.round(total_est_tax * 0.45) - adv_paid).toLocaleString('en-IN')} advance tax via challan ITNS 280` })
         } else if (month > 9 && month <= 12 && adv_paid < total_est_tax * 0.75) {
-          issues.push({ severity: 'warning', category: 'Advance Tax', issue: `Q3 instalment (75% = ₹${Math.round(total_est_tax*0.75).toLocaleString('en-IN')}) due Dec 15. Paid so far: ₹${adv_paid.toLocaleString('en-IN')}.`, law: 'Sec 208/234C', action: `Pay ₹${Math.max(0, Math.round(total_est_tax*0.75) - adv_paid).toLocaleString('en-IN')} before Dec 15` })
+          issues.push({ severity: 'warning', category: 'Advance Tax', issue: `Q3 instalment (75% = ₹${Math.round(total_est_tax * 0.75).toLocaleString('en-IN')}) due Dec 15. Paid so far: ₹${adv_paid.toLocaleString('en-IN')}.`, law: 'Sec 208/234C', action: `Pay ₹${Math.max(0, Math.round(total_est_tax * 0.75) - adv_paid).toLocaleString('en-IN')} before Dec 15` })
         }
       }
     }
@@ -1150,14 +1214,14 @@ router.post('/compliance-check', async (req, res) => {
     const warnings = issues.filter(i => i.severity === 'warning').length
     res.json({
       company: company.name, checked_at: new Date().toISOString(),
-      summary: { total_issues: issues.length, critical, warnings, info: issues.filter(i=>i.severity==='info').length },
+      summary: { total_issues: issues.length, critical, warnings, info: issues.filter(i => i.severity === 'info').length },
       issues,
       all_clear: issues.length === 0,
     })
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-// ── POST /api/ai/audit-analysis — AI-powered audit trail anomaly detection ────
+//  POST /api/ai/audit-analysis — AI-powered audit trail anomaly detection 
 router.post('/audit-analysis', async (req, res) => {
   const { company_id, from, to, groq_api_key } = req.body
   if (!company_id) return res.status(400).json({ error: 'company_id required' })
@@ -1169,7 +1233,7 @@ router.post('/audit-analysis', async (req, res) => {
                   WHERE al.company_id=$1`
     const params = [company_id]
     if (from) { params.push(from); auditQ += ` AND al.created_at>=$${params.length}` }
-    if (to)   { params.push(to);   auditQ += ` AND al.created_at<=$${params.length}` }
+    if (to) { params.push(to); auditQ += ` AND al.created_at<=$${params.length}` }
     auditQ += ' ORDER BY al.created_at DESC LIMIT 200'
     const { rows: auditRows } = await pool.query(auditQ, params)
 
@@ -1187,12 +1251,12 @@ router.post('/audit-analysis', async (req, res) => {
     const anomalies = []
 
     // 1. Unusually large single journal entry (> 3x median)
-    const amounts = jeRows.map(j => parseFloat(j.total_debit || 0)).filter(a => a > 0).sort((a,b) => a-b)
+    const amounts = jeRows.map(j => parseFloat(j.total_debit || 0)).filter(a => a > 0).sort((a, b) => a - b)
     if (amounts.length > 5) {
       const median = amounts[Math.floor(amounts.length / 2)]
-      const outliers = jeRows.filter(j => parseFloat(j.total_debit||0) > median * 10)
+      const outliers = jeRows.filter(j => parseFloat(j.total_debit || 0) > median * 10)
       outliers.forEach(j => {
-        anomalies.push({ type: 'large_transaction', severity: 'warning', entry: j.entry_number, amount: parseFloat(j.total_debit), median, ratio: Math.round(parseFloat(j.total_debit)/median), description: `JE ${j.entry_number} (₹${parseFloat(j.total_debit).toLocaleString('en-IN')}) is ${Math.round(parseFloat(j.total_debit)/median)}× the median transaction amount`, date: j.entry_date, narration: j.narration })
+        anomalies.push({ type: 'large_transaction', severity: 'warning', entry: j.entry_number, amount: parseFloat(j.total_debit), median, ratio: Math.round(parseFloat(j.total_debit) / median), description: `JE ${j.entry_number} (₹${parseFloat(j.total_debit).toLocaleString('en-IN')}) is ${Math.round(parseFloat(j.total_debit) / median)}× the median transaction amount`, date: j.entry_date, narration: j.narration })
       })
     }
 
@@ -1208,7 +1272,7 @@ router.post('/audit-analysis', async (req, res) => {
       return d.getDay() === 0 || d.getDay() === 6 // Sunday or Saturday
     })
     if (oddTimeJEs.length > 0) {
-      anomalies.push({ type: 'weekend_entries', severity: 'info', count: oddTimeJEs.length, description: `${oddTimeJEs.length} journal entries posted on weekends. Review if intentional.`, entries: oddTimeJEs.slice(0,5).map(j => j.entry_number) })
+      anomalies.push({ type: 'weekend_entries', severity: 'info', count: oddTimeJEs.length, description: `${oddTimeJEs.length} journal entries posted on weekends. Review if intentional.`, entries: oddTimeJEs.slice(0, 5).map(j => j.entry_number) })
     }
 
     // 4. Round-number entries that might be estimates
@@ -1240,7 +1304,7 @@ router.post('/audit-analysis', async (req, res) => {
         const prompt = `You are a forensic accountant reviewing audit trail data for ${coRows[0]?.name || 'a company'}.
 
 AUDIT TRAIL SUMMARY (last ${auditRows.length} events):
-${auditRows.slice(0,30).map(r => `${new Date(r.created_at).toLocaleDateString('en-IN')} | ${r.user_name} | ${r.action} | ${r.table_name} #${r.record_id}`).join('\n')}
+${auditRows.slice(0, 30).map(r => `${new Date(r.created_at).toLocaleDateString('en-IN')} | ${r.user_name} | ${r.action} | ${r.table_name} #${r.record_id}`).join('\n')}
 
 STATISTICAL ANOMALIES DETECTED:
 ${anomalies.length === 0 ? 'None' : anomalies.map(a => `- ${a.type}: ${a.description}`).join('\n')}
@@ -1269,7 +1333,7 @@ Keep the analysis factual, actionable, and under 400 words.`
           const data = await response.json()
           ai_narrative = data.choices?.[0]?.message?.content || null
         }
-      } catch (_) {}
+      } catch (_) { }
     }
 
     res.json({
@@ -1282,7 +1346,7 @@ Keep the analysis factual, actionable, and under 400 words.`
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
-// ── GET /api/ai/rules?query=194C+threshold — RAG rule lookup ──────────────────
+//  GET /api/ai/rules?query=194C+threshold — RAG rule lookup 
 router.get('/rules', (req, res) => {
   const { query } = req.query
   if (!query) return res.json({ rules: TAX_RULES_KB })
@@ -1290,6 +1354,6 @@ router.get('/rules', (req, res) => {
   // Simple keyword search through the knowledge base
   const lines = TAX_RULES_KB.split('\n')
   const q = query.toLowerCase()
-  const matched = lines.filter(l => l.toLowerCase().includes(q) || l.toLowerCase().replace(/[^a-z0-9]/g,'').includes(q.replace(/[^a-z0-9]/g,'')))
+  const matched = lines.filter(l => l.toLowerCase().includes(q) || l.toLowerCase().replace(/[^a-z0-9]/g, '').includes(q.replace(/[^a-z0-9]/g, '')))
   res.json({ query, matched_rules: matched, total_matched: matched.length })
 })

@@ -26,8 +26,10 @@ router.get('/:id', async (req, res) => {
     // FIX: Validate CA has access to the company this note belongs to
     const note = await pool.query(
       `SELECT n.* FROM credit_debit_notes n
-       JOIN ca_company_access cca ON cca.company_id=n.company_id
-       WHERE n.id=$1 AND cca.ca_id=$2`,
+       WHERE n.id=$1 AND n.company_id IN (
+         SELECT company_id FROM ca_company_access WHERE ca_id=$2
+         UNION SELECT id FROM companies WHERE created_by=$2
+       )`,
       [req.params.id, req.user.id]
     )
     if (!note.rows.length) return res.status(404).json({ error: 'Note not found' })
@@ -118,8 +120,12 @@ router.post('/', async (req, res) => {
       const r = await client.query('SELECT id FROM accounts WHERE company_id=$1 AND code=$2', [company_id, code])
       return r.rows[0]?.id
     }
-    const { rows: countRows } = await client.query('SELECT COUNT(*) FROM journal_entries WHERE company_id=$1', [company_id])
-    const entryNum = `JE-${String(parseInt(countRows[0].count) + 1).padStart(4, '0')}`
+    const { rows: countRows } = await client.query(
+      `SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM 4) AS INTEGER)), 0) + 1 AS next
+       FROM journal_entries WHERE company_id=$1 FOR UPDATE`,
+      [company_id]
+    )
+    const entryNum = `JE-${String(countRows[0].next).padStart(4, '0')}`
     const isCredit = note_type === 'credit'
 
     const je = await client.query(

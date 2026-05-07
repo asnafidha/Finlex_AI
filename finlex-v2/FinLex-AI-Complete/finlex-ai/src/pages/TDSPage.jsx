@@ -29,10 +29,26 @@ export default function TDSPage() {
   const [error, setError] = useState('')
   const [showTable, setShowTable] = useState(true)
   const [toast, setToast] = useState(null)
+  const [depositModal, setDepositModal] = useState(null)
+  const [depositForm, setDepositForm] = useState({
+    challan_no: '',
+    cin: '',
+    deposit_date: new Date().toISOString().split('T')[0]
+  })
 
   const showToast = (msg, detail, type = 'success') => {
     setToast({ msg, detail, type })
     setTimeout(() => setToast(null), 4000)
+  }
+
+  const calcInterest = (entry) => {
+    if (entry.deposited) return 0
+    const dueDate = new Date(entry.payment_date)
+    dueDate.setMonth(dueDate.getMonth() + 1)
+    const today = new Date()
+    if (today <= dueDate) return 0
+    const daysLate = Math.ceil((today - dueDate) / (1000 * 60 * 60 * 24))
+    return Math.round((entry.tds_amount * 1.5 / 100) * Math.ceil(daysLate / 30) * 100) / 100
   }
 
   const [calcForm, setCalcForm] = useState({ amount: '', section: '194J', party_type: 'company', pan_available: true })
@@ -96,6 +112,10 @@ export default function TDSPage() {
   }
 
   const handleSaveEntry = async () => {
+    if (!entryForm.party_name || !entryForm.gross_amount || !entryForm.tds_amount) {
+      setError('Party name, gross amount, and TDS amount required')
+      return
+    }
     setLoading(true); setError('')
     try {
       await request('/tds/entries', { method: 'POST', body: JSON.stringify({ company_id: company.id, ...entryForm }) })
@@ -107,6 +127,30 @@ export default function TDSPage() {
       loadEntries()
     } catch (err) { setError(err.message) }
     finally { setLoading(false) }
+  }
+
+  const handleDeposit = async () => {
+    if (!depositForm.challan_no) {
+      setError('Challan number is required')
+      return
+    }
+    setLoading(true)
+    try {
+      await request(`/tds/entries/${depositModal.id}/deposit`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          challan_no: depositForm.challan_no,
+          deposit_date: depositForm.deposit_date
+        })
+      })
+      showToast('TDS deposit recorded', `Challan ${depositForm.challan_no} recorded`)
+      setDepositModal(null)
+      loadEntries()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const inp = {
@@ -310,7 +354,7 @@ export default function TDSPage() {
                     <tr key={i} style={{ background: i % 2 === 0 ? 'var(--white)' : 'var(--gray-100)', borderBottom: '1px solid var(--gray-200)' }}>
                       <td style={{ padding: '11px 14px', fontSize: 13, color: 'var(--gray-600)' }}>{new Date(e.payment_date).toLocaleDateString('en-IN')}</td>
                       <td style={{ padding: '11px 14px', fontSize: 13, fontWeight: 600, color: 'var(--navy)' }}>{e.party_name}</td>
-                      <td style={{ padding: '11px 14px', fontSize: 12, fontFamily: 'var(--font-mono)' }}>{e.party_pan || '—'}</td>
+                      <td style={{ padding: '11px 14px', fontSize: 12, fontFamily: 'var(--font-mono)', color: e.party_pan ? 'inherit' : '#dc2626', fontWeight: e.party_pan ? 'normal' : 600 }}>{e.party_pan || '⚠ PAN Missing'}</td>
                       <td style={{ padding: '11px 14px' }}>
                         <span style={{ background: '#eff6ff', color: '#1d4ed8', fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6 }}>{e.section}</span>
                       </td>
@@ -319,13 +363,28 @@ export default function TDSPage() {
                       <td style={{ padding: '11px 14px', fontSize: 13, fontWeight: 700, color: '#dc2626' }}>{fmt(e.tds_amount)}</td>
                       <td style={{ padding: '11px 14px', fontSize: 13, fontWeight: 700, color: '#10b981' }}>{fmt(e.net_amount)}</td>
                       <td style={{ padding: '11px 14px' }}>
-                        <span style={{
-                          fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20,
-                          background: e.deposited ? '#f0fdf4' : '#fff7ed',
-                          color: e.deposited ? '#16a34a' : '#ea580c'
-                        }}>
-                          {e.deposited ? 'Deposited' : 'Pending'}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{
+                            fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20,
+                            background: e.deposited ? '#f0fdf4' : '#fff7ed',
+                            color: e.deposited ? '#16a34a' : '#ea580c'
+                          }}>
+                            {e.deposited ? `✓ ${e.challan_no || 'Deposited'}` : 'Pending'}
+                          </span>
+                          {!e.deposited && (
+                            <>
+                              <button onClick={() => { setDepositModal(e); setDepositForm({ challan_no: '', cin: '', deposit_date: new Date().toISOString().split('T')[0] }) }}
+                                style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 20, border: 'none', background: '#eff6ff', color: '#1d4ed8', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                                Pay TDS
+                              </button>
+                              {calcInterest(e) > 0 && (
+                                <span style={{ fontSize: 10, color: '#dc2626', fontWeight: 600 }}>
+                                  +₹{calcInterest(e).toLocaleString('en-IN')} int.
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -334,6 +393,45 @@ export default function TDSPage() {
             )}
           </div>
         </>
+      )}
+
+      {/* Deposit Modal */}
+      {depositModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div style={{ background:'var(--white)', borderRadius:20, padding:28, width:'100%', maxWidth:420 }}>
+            <div style={{ fontFamily:'var(--font-display)', fontSize:18, fontWeight:700, color:'var(--navy)', marginBottom:4 }}>Record TDS Deposit</div>
+            <div style={{ fontSize:12, color:'var(--gray-500)', marginBottom:20 }}>
+              {depositModal.party_name} · u/s {depositModal.section} · ₹{parseFloat(depositModal.tds_amount).toLocaleString('en-IN')}
+              {calcInterest(depositModal) > 0 && (
+                <span style={{ marginLeft:8, color:'#dc2626', fontWeight:600 }}>
+                  + ₹{calcInterest(depositModal).toLocaleString('en-IN')} interest u/s 201(1A)
+                </span>
+              )}
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:14, marginBottom:20 }}>
+              {[
+                { label:'Challan No (ITNS 281) *', key:'challan_no', placeholder:'e.g. 12345678' },
+                { label:'Challan Identification No (CIN)', key:'cin', placeholder:'e.g. BKID001234567' },
+              ].map(f => (
+                <div key={f.key}>
+                  <label style={{ fontSize:11, fontWeight:600, color:'var(--gray-600)', display:'block', marginBottom:5 }}>{f.label.toUpperCase()}</label>
+                  <input value={depositForm[f.key]} onChange={e => setDepositForm({...depositForm, [f.key]: e.target.value})}
+                    placeholder={f.placeholder}
+                    style={{ width:'100%', padding:'9px 12px', borderRadius:8, border:'1.5px solid var(--gray-200)', fontSize:13, fontFamily:'var(--font-body)', outline:'none', boxSizing:'border-box' }} />
+                </div>
+              ))}
+              <div>
+                <label style={{ fontSize:11, fontWeight:600, color:'var(--gray-600)', display:'block', marginBottom:5 }}>DEPOSIT DATE</label>
+                <input type="date" value={depositForm.deposit_date} onChange={e => setDepositForm({...depositForm, deposit_date: e.target.value})}
+                  style={{ width:'100%', padding:'9px 12px', borderRadius:8, border:'1.5px solid var(--gray-200)', fontSize:13, fontFamily:'var(--font-body)', outline:'none', boxSizing:'border-box' }} />
+              </div>
+            </div>
+            <div style={{ display:'flex', gap:10 }}>
+              <button onClick={() => setDepositModal(null)} style={{ flex:1, padding:11, borderRadius:9, border:'1px solid var(--gray-200)', background:'var(--gray-100)', color:'var(--gray-600)', fontSize:13, cursor:'pointer', fontFamily:'var(--font-body)' }}>Cancel</button>
+              <button onClick={handleDeposit} disabled={loading} style={{ flex:2, padding:11, borderRadius:9, border:'none', background:'linear-gradient(135deg, #C9A84C, #e2c06e)', color:'var(--navy)', fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'var(--font-body)', opacity: loading ? 0.7 : 1 }}>Record Deposit</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Sections/Rates Tab */}

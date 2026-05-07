@@ -23,12 +23,17 @@ export default function ITRPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState('')
 
+  // Auto-detect current Indian FY
+  const now = new Date()
+  const fyStartYear = now.getMonth() >= 3 ? now.getFullYear() - 1 : now.getFullYear() - 2
+  const currentFY = `${fyStartYear}-${String(fyStartYear + 1).slice(2)}`
+
   useEffect(() => { if (company?.id) loadComputation() }, [company, regime])
 
   const loadComputation = async () => {
     setLoading(true); setError('')
     try {
-      const res = await request(`/itr/computation?company_id=${company.id}&regime=${regime}&fy=2024-25`)
+      const res = await request(`/itr/computation?company_id=${company.id}&regime=${regime}&fy=${currentFY}`)
       setData(res)
     } catch (err) { setError(err.message) }
     finally { setLoading(false) }
@@ -40,7 +45,7 @@ export default function ITRPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
         <div>
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 700, color: 'var(--navy)', marginBottom: 4 }}>ITR Preparation</h1>
-          <p style={{ color: 'var(--gray-600)', fontSize: 15 }}>Tax computation from your P&L data — FY 2024-25</p>
+          <p style={{ color: 'var(--gray-600)', fontSize: 15 }}>Tax computation from your P&L data — FY {currentFY}</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={loadComputation} style={{
@@ -97,7 +102,7 @@ export default function ITRPage() {
               <div>
                 <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', marginBottom: 2 }}>RECOMMENDED REGIME</div>
                 <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, color: 'var(--white)', textTransform: 'capitalize' }}>
-                  {data.comparison.recommended} Regime — Save {fmtShort(data.comparison.savings)}
+                  {data.comparison.recommended} Regime{data.comparison.savings > 0 ? ` — Save ${fmtShort(data.comparison.savings)}` : ' — Both regimes equal'}
                 </div>
               </div>
             </div>
@@ -121,8 +126,11 @@ export default function ITRPage() {
               {[
                 { label: 'Gross Revenue',        value: data.income_computation.gross_revenue,        color: '#10b981' },
                 { label: 'Less: Total Expenses', value: data.income_computation.total_expenses,        color: '#dc2626', prefix: '(−)' },
-                { label: 'Net Profit',           value: data.income_computation.net_profit,            color: 'var(--navy)', bold: true },
-                { label: 'Less: Std Deduction',  value: data.income_computation.standard_deduction,   color: '#f59e0b', prefix: '(−)' },
+                { label: 'Net Profit / Loss',    value: data.income_computation.net_profit,            color: 'var(--navy)', bold: true },
+                // Standard deduction removed — applicable only for salaried (ITR-1/2), not business (ITR-3/4)
+                ...(data.income_computation.brought_forward_loss > 0 ? [
+                  { label: 'Less: B/F Loss (Sec 72)', value: data.income_computation.brought_forward_loss, color: '#f59e0b', prefix: '(−)' }
+                ] : []),
                 { label: 'Taxable Income',       value: data.income_computation.taxable_income,        color: 'var(--navy)', bold: true },
               ].map((r, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < 4 ? '1px solid var(--gray-200)' : 'none' }}>
@@ -216,6 +224,33 @@ export default function ITRPage() {
               </div>
             </div>
           </div>
+          {/* Loss Carry Forward — shown only when there's a loss */}
+          {data.income_computation.net_profit < 0 && (
+            <div style={{ background: '#fffbeb', borderRadius: 16, padding: 24, border: '1.5px solid #fde68a', boxShadow: 'var(--shadow-sm)' }}>
+              <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: '#92400e', marginBottom: 4 }}>
+                📉 Business Loss — Carry Forward (Section 72)
+              </h3>
+              <p style={{ fontSize: 13, color: '#78350f', marginBottom: 16 }}>
+                This year's business loss can be carried forward for up to 8 assessment years and set off against future business income.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
+                {[
+                  { label: 'Loss This Year', value: fmt(Math.abs(data.income_computation.net_profit)), color: '#dc2626', bg: '#fef2f2' },
+                  { label: 'Previous B/F Loss', value: fmt(data.income_computation.brought_forward_loss || 0), color: '#f59e0b', bg: '#fffbeb' },
+                  { label: 'Total Loss C/F to Next Year', value: fmt(Math.abs(data.income_computation.net_profit) + (data.income_computation.brought_forward_loss || 0)), color: '#92400e', bg: '#fef9c3' },
+                ].map((s, i) => (
+                  <div key={i} style={{ background: s.bg, borderRadius: 10, padding: '14px 16px', border: `1px solid ${s.color}33` }}>
+                    <div style={{ fontSize: 11, color: 'var(--gray-600)', fontWeight: 600, marginBottom: 6 }}>{s.label}</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: s.color, fontFamily: 'var(--font-display)' }}>{s.value}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 14, fontSize: 12, color: '#92400e', background: '#fef3c7', borderRadius: 8, padding: '10px 14px' }}>
+                ⚠️ File ITR even in loss year to preserve carry forward benefit. Unset-off losses lapse if ITR not filed on time.
+              </div>
+            </div>
+          )}
+
           {/* Advance Tax Instalments */}
           {data.advance_tax?.applicable && data.advance_tax.instalments?.length > 0 && (
             <div style={{ background: 'var(--white)', borderRadius: 16, padding: 24, border: '1px solid var(--gray-200)', boxShadow: 'var(--shadow-sm)' }}>

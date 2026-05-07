@@ -85,6 +85,13 @@ export default function Dashboard({ setPage }) {
 
   useEffect(() => { loadData() }, [company])
 
+  // Auto-refresh when user returns to dashboard tab (fixes stale data after delete/add)
+  useEffect(() => {
+    const handleVisibility = () => { if (document.visibilityState === 'visible') loadData() }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [company])
+
   const loadData = async () => {
     setLoading(true); setError(null)
     try {
@@ -104,7 +111,7 @@ export default function Dashboard({ setPage }) {
         ])
         setPl(plData)
         setDeadlines(comp.slice(0, 5))
-        setRecentInvoices(invs.slice(0, 4))
+        setRecentInvoices(invs.filter(i => i.status !== 'cancelled').slice(0, 4))
         loadActions(activeCompany.id)
       }
     } catch (err) { setError(err.message) }

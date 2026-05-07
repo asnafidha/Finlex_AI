@@ -1,8 +1,10 @@
 const router = require('express').Router()
 const pool   = require('../config/db')
 const auth   = require('../middleware/auth')
+const companyAccess = require('../middleware/companyAccess')
 
 router.use(auth)
+router.use(companyAccess)
 
 // POST /api/payroll/calculate — auto-compute PF/ESIC/TDS from salary components
 // Called before saving to show breakdown to user

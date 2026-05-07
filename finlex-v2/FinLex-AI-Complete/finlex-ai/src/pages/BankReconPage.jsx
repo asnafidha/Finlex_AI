@@ -144,7 +144,11 @@ export default function BankReconPage() {
         ) : lines.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 60 }}>
             <Upload size={40} color="var(--gray-300)" style={{ marginBottom: 12 }} />
-            <div style={{ color: 'var(--gray-400)', fontSize: 14 }}>No statement lines yet. Import a bank statement to begin.</div>
+            <div style={{ color: 'var(--gray-400)', fontSize: 15, fontWeight: 600, marginBottom: 8 }}>No statement lines yet</div>
+            <div style={{ color: 'var(--gray-400)', fontSize: 13, marginBottom: 16 }}>Import your bank statement CSV to begin reconciliation</div>
+            <button onClick={() => setShowImport(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 20px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #C9A84C, #e2c06e)', color: 'var(--navy)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              <Upload size={14} /> Import Bank Statement
+            </button>
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -160,8 +164,8 @@ export default function BankReconPage() {
                 <tr key={l.id} style={{ borderBottom: '1px solid var(--gray-50)', background: l.matched ? 'transparent' : '#fffbeb' }}>
                   <td style={{ padding: '10px 12px', color: 'var(--gray-600)', fontSize: 12 }}>{new Date(l.statement_date).toLocaleDateString('en-IN')}</td>
                   <td style={{ padding: '10px 12px', color: 'var(--navy)', fontWeight: 400, maxWidth: 220 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.description || '—'}</div></td>
-                  <td style={{ padding: '10px 12px', color: '#dc2626', fontWeight: parseFloat(l.debit) > 0 ? 600 : 400 }}>{parseFloat(l.debit) > 0 ? fmt(l.debit) : '—'}</td>
-                  <td style={{ padding: '10px 12px', color: '#16a34a', fontWeight: parseFloat(l.credit) > 0 ? 600 : 400 }}>{parseFloat(l.credit) > 0 ? fmt(l.credit) : '—'}</td>
+                  <td style={{ padding: '10px 12px', color: '#dc2626', fontWeight: parseFloat(l.debit_amount) > 0 ? 600 : 400 }}>{parseFloat(l.debit_amount) > 0 ? fmt(l.debit_amount) : '—'}</td>
+                  <td style={{ padding: '10px 12px', color: '#16a34a', fontWeight: parseFloat(l.credit_amount) > 0 ? 600 : 400 }}>{parseFloat(l.credit_amount) > 0 ? fmt(l.credit_amount) : '—'}</td>
                   <td style={{ padding: '10px 12px' }}>
                     {l.matched_entry_number
                       ? <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>{l.matched_entry_number}</span>
@@ -215,7 +219,7 @@ export default function BankReconPage() {
             </div>
             <div style={{ background: 'var(--gray-50)', borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 12 }}>
               <strong>{matchModal.description}</strong><br />
-              {new Date(matchModal.statement_date).toLocaleDateString('en-IN')} · {parseFloat(matchModal.credit) > 0 ? `Credit ${fmt(matchModal.credit)}` : `Debit ${fmt(matchModal.debit)}`}
+              {new Date(matchModal.statement_date).toLocaleDateString('en-IN')} · {parseFloat(matchModal.credit_amount) > 0 ? `Credit ${fmt(matchModal.credit_amount)}` : `Debit ${fmt(matchModal.debit_amount)}`}
             </div>
             <div style={{ maxHeight: 300, overflowY: 'auto' }}>
               {journals.map(j => (

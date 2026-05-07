@@ -84,7 +84,7 @@ export default function CompliancePage() {
     try {
       const data = await complianceApi.list(company.id)
       setDeadlines(data)
-    } catch (err) { console.error(err) }
+    } catch (err) { showToast('Failed to load compliance data', err.message, 'error') }
     finally { setLoading(false) }
   }
 
@@ -125,7 +125,19 @@ export default function CompliancePage() {
     return deadlines.filter(d => d.due_date?.startsWith(dateStr))
   }
 
-  const filteredDeadlines = filter === 'all' ? deadlines : deadlines.filter(d => d.status === filter)
+  const [timeFilter, setTimeFilter] = useState('upcoming30')
+  const filteredDeadlines = (() => {
+    let list = filter === 'all' ? deadlines : deadlines.filter(d => d.status === filter)
+    if (timeFilter === 'upcoming30') {
+      list = list.filter(d => {
+        const days = Math.round(d.days_left || 0)
+        return days >= -7 && days <= 30  // show overdue up to 7 days + next 30 days
+      })
+    } else if (timeFilter === 'overdue') {
+      list = list.filter(d => (d.days_left || 0) < 0)
+    }
+    return list
+  })()
 
   const counts = {
     overdue:   deadlines.filter(d => d.status === 'overdue').length,
@@ -240,7 +252,7 @@ export default function CompliancePage() {
                 return (
                   <div key={i} style={{ display:'flex', alignItems:'center', gap:7, marginBottom:5 }}>
                     <span style={{ fontSize:9, fontWeight:700, padding:'2px 5px', borderRadius:3, background:t.bg, color:t.color }}>{d.type}</span>
-                    <span style={{ fontSize:12, color:'var(--navy)', flex:1 }}>{d.name}</span>
+                    <span style={{ fontSize:12, color:'var(--navy)', flex:1 }}>{d.name}{d.period ? ` (${d.period})` : ''}</span>
                     <span style={{ fontSize:10, padding:'2px 6px', borderRadius:8, background:s.bg, color:s.color }}>{s.label}</span>
                   </div>
                 )
@@ -251,6 +263,13 @@ export default function CompliancePage() {
 
         {/* Deadline list */}
         <div style={{ background:'var(--white)', borderRadius:16, border:'1px solid var(--gray-200)', boxShadow:'var(--shadow-sm)', overflow:'hidden' }}>
+          {/* Time filter */}
+          <div style={{ display:'flex', gap:6, padding:'8px 10px 0', background:'var(--gray-100)' }}>
+            {[['upcoming30','📅 Next 30 Days'],['overdue','🚨 Overdue'],['all','📋 All Time']].map(([v,l]) => (
+              <button key={v} onClick={() => setTimeFilter(v)} style={{ padding:'5px 12px', borderRadius:8, border:'none', background:timeFilter===v?'var(--gold)':'var(--white)', color:timeFilter===v?'var(--navy)':'var(--gray-600)', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'var(--font-body)' }}>{l}</button>
+            ))}
+          </div>
+
           {/* Filter tabs */}
           <div style={{ display:'flex', gap:4, padding:10, borderBottom:'1px solid var(--gray-200)', background:'var(--gray-100)' }}>
             {['all','overdue','pending','completed'].map(f => (
@@ -288,7 +307,7 @@ export default function CompliancePage() {
                     <div style={{ width:8, height:8, borderRadius:'50%', background:s.color, flexShrink:0 }} />
                     <span style={{ fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:4, background:t.bg, color:t.color, minWidth:32, textAlign:'center' }}>{d.type}</span>
                     <div>
-                      <div style={{ fontSize:13, fontWeight:600, color:'var(--navy)' }}>{d.name}</div>
+                      <div style={{ fontSize:13, fontWeight:600, color:'var(--navy)' }}>{d.name}{d.period ? <span style={{ fontSize:11, color:'var(--gray-400)', fontWeight:400, marginLeft:6 }}>({d.period})</span> : ''}</div>
                       <div style={{ fontSize:11, color:'var(--gray-400)', marginTop:1, display:'flex', gap:6, alignItems:'center' }}>
                         <span>Due {new Date(d.due_date).toLocaleDateString('en-IN')}</span>
                         {daysDisplay && (

@@ -15,6 +15,184 @@ const getSuggestions = (company) => [
 const BASE_URL = 'http://localhost:5000/api'
 const getToken = () => localStorage.getItem('finlex_token')
 
+// ────────────────────────────────────────────────────────────────────────────────
+// Parse action buttons from AI response
+// Looks for patterns like: [Reclassify as Asset] or [Create TDS Entry]
+// ────────────────────────────────────────────────────────────────────────────────
+const parseActionsFromText = (text) => {
+  const actionRegex = /\[(.*?)\]/g
+  const actions = []
+  let match
+  while ((match = actionRegex.exec(text)) !== null) {
+    actions.push({
+      label: match[1],
+      action: match[1].toLowerCase().replace(/\s+/g, '_')
+    })
+  }
+  return actions
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Clean text by removing action brackets (so they don't show as text + button)
+// ────────────────────────────────────────────────────────────────────────────────
+const cleanText = (text) => {
+  return text.replace(/\[(.*?)\]/g, '').trim()
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Handle action button clicks - FUZZY MATCHING for intelligent navigation
+// ────────────────────────────────────────────────────────────────────────────────
+const handleActionClick = (action) => {
+  console.log('Action clicked:', action)
+  
+  const normalizedAction = action.toLowerCase()
+  
+  // ─── ASSET RECLASSIFICATION ──────────────────────────────────────────────
+  if (normalizedAction.includes('reclassify') || 
+      normalizedAction.includes('fixed_asset') || 
+      normalizedAction.includes('capitalize') ||
+      normalizedAction.includes('asset')) {
+    const invoiceMatch = action.match(/pur-\d{4}-\d{3,4}/i)
+    const invoiceParam = invoiceMatch ? `?invoice=${invoiceMatch[0].toUpperCase()}` : ''
+    window.location.href = `/fixed-assets/new${invoiceParam}`
+    return
+  }
+  
+  // ─── TDS ACTIONS ─────────────────────────────────────────────────────────
+  if (normalizedAction.includes('tds') || 
+      normalizedAction.includes('194j') || 
+      normalizedAction.includes('194c') || 
+      normalizedAction.includes('194i') ||
+      normalizedAction.includes('194h') ||
+      normalizedAction.includes('194q') ||
+      normalizedAction.includes('deduct')) {
+    const sectionMatch = action.match(/194[a-z]/i)
+    const sectionParam = sectionMatch ? `?section=${sectionMatch[0].toUpperCase()}` : ''
+    window.location.href = `/tds/new${sectionParam}`
+    return
+  }
+  
+  // ─── GST FILING ──────────────────────────────────────────────────────────
+  if (normalizedAction.includes('gstr-1') || 
+      normalizedAction.includes('gstr1') || 
+      normalizedAction.includes('file_gstr-1') ||
+      normalizedAction.includes('gstr_1')) {
+    window.location.href = '/gst/export?type=gstr1'
+    return
+  }
+  
+  if (normalizedAction.includes('gstr-3b') || 
+      normalizedAction.includes('gstr3b') || 
+      normalizedAction.includes('file_gstr-3b')) {
+    window.location.href = '/gst/export?type=gstr3b'
+    return
+  }
+  
+  if (normalizedAction.includes('file_gstr') || normalizedAction.includes('gst_return')) {
+    window.location.href = '/gst/export'
+    return
+  }
+  
+  // ─── ITC RECONCILIATION ─────────────────────────────────────────────────
+  if (normalizedAction.includes('gstr-2b') || 
+      normalizedAction.includes('gstr2b') || 
+      normalizedAction.includes('reconcile') || 
+      normalizedAction.includes('itc') ||
+      normalizedAction.includes('claim_itc') ||
+      normalizedAction.includes('input_tax')) {
+    window.location.href = '/gst/reconciliation'
+    return
+  }
+  
+  // ─── COMPLIANCE ──────────────────────────────────────────────────────────
+  if (normalizedAction.includes('compliance') || 
+      normalizedAction.includes('deadline') || 
+      normalizedAction.includes('file_now') ||
+      normalizedAction.includes('view_calendar') ||
+      normalizedAction.includes('overdue')) {
+    window.location.href = '/compliance'
+    return
+  }
+  
+  // ─── RECEIVABLES / UNPAID INVOICES ──────────────────────────────────────
+  if (normalizedAction.includes('unpaid') || 
+      normalizedAction.includes('receivable') || 
+      normalizedAction.includes('collect') || 
+      normalizedAction.includes('follow_up') ||
+      normalizedAction.includes('recover') ||
+      normalizedAction.includes('overdue_invoice')) {
+    window.location.href = '/invoices?status=unpaid'
+    return
+  }
+  
+  // ─── FINANCIAL REPORTS ───────────────────────────────────────────────────
+  if (normalizedAction.includes('p&l') || 
+      normalizedAction.includes('profit') || 
+      normalizedAction.includes('report') ||
+      normalizedAction.includes('view_pnl') ||
+      normalizedAction.includes('financial_statement')) {
+    window.location.href = '/reports/pnl'
+    return
+  }
+  
+  if (normalizedAction.includes('balance_sheet') || normalizedAction.includes('trial_balance')) {
+    window.location.href = '/reports'
+    return
+  }
+  
+  // ─── DEPRECIATION ────────────────────────────────────────────────────────
+  if (normalizedAction.includes('depreciation') || normalizedAction.includes('wdv') || normalizedAction.includes('slm')) {
+    window.location.href = '/fixed-assets/depreciation'
+    return
+  }
+  
+  // ─── ADVANCE TAX ─────────────────────────────────────────────────────────
+  if (normalizedAction.includes('advance_tax') || 
+      normalizedAction.includes('advance tax') ||
+      normalizedAction.includes('pay_tax')) {
+    window.location.href = '/tax/advance'
+    return
+  }
+  
+  // ─── JOURNAL ENTRIES ─────────────────────────────────────────────────────
+  if (normalizedAction.includes('journal') || normalizedAction.includes('create_entry')) {
+    window.location.href = '/journal/new'
+    return
+  }
+  
+  // ─── PAYROLL ─────────────────────────────────────────────────────────────
+  if (normalizedAction.includes('payroll') || normalizedAction.includes('salary') || normalizedAction.includes('pf')) {
+    window.location.href = '/payroll'
+    return
+  }
+  
+  // ─── BANK RECONCILIATION ─────────────────────────────────────────────────
+  if (normalizedAction.includes('bank') || normalizedAction.includes('reconciliation')) {
+    window.location.href = '/bank/reconciliation'
+    return
+  }
+  
+  // ─── DASHBOARD ───────────────────────────────────────────────────────────
+  if (normalizedAction.includes('dashboard') || normalizedAction.includes('mission_control')) {
+    window.location.href = '/'
+    return
+  }
+  
+  // Fallback - show friendly message with extracted info
+  const friendlyName = action.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+  const invoiceMatches = action.match(/pur-\d{4}-\d{3,4}/gi) || []
+  const salMatches = action.match(/sal-\d{4}-\d{3,4}/gi) || []
+  const allInvoices = [...invoiceMatches, ...salMatches]
+  
+  let message = `🚀 Action: ${friendlyName}\n\n`
+  if (allInvoices.length > 0) {
+    message += `📋 Invoice references: ${allInvoices.join(', ').toUpperCase()}\n\n`
+  }
+  message += `✨ This would navigate to the relevant module in production.`
+  
+  alert(message)
+}
+
 export default function ChatBot() {
   const { company } = useAuth()
   const [open, setOpen]         = useState(false)
@@ -41,7 +219,7 @@ export default function ChatBot() {
     }
     window.addEventListener('finlex-ask-ai', handler)
     return () => window.removeEventListener('finlex-ask-ai', handler)
-  }, [messages, company]) // include messages so send() has fresh state
+  }, [messages, company])
 
   const send = async (msg) => {
     if (!msg?.trim() || typing) return
@@ -138,25 +316,73 @@ export default function ChatBot() {
 
           {/* Messages */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px 8px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {messages.map((m, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: m.from === 'user' ? 'flex-end' : 'flex-start' }}>
-                <div style={{
-                  maxWidth: '85%',
-                  padding: '10px 13px',
-                  borderRadius: m.from === 'user' ? '14px 14px 4px 14px' : '4px 14px 14px 14px',
-                  background: m.from === 'user'
-                    ? 'linear-gradient(135deg, var(--navy), #1e3a5f)'
-                    : 'var(--gray-100)',
-                  color: m.from === 'user' ? 'var(--white)' : 'var(--navy)',
-                  fontSize: 13,
-                  lineHeight: 1.5,
-                  fontFamily: 'var(--font-body)',
-                  whiteSpace: 'pre-wrap',
-                }}>
-                  {m.text}
+            {messages.map((m, i) => {
+              const actions = m.from === 'ai' ? parseActionsFromText(m.text) : []
+              const displayText = m.from === 'ai' ? cleanText(m.text) : m.text
+              
+              return (
+                <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.from === 'user' ? 'flex-end' : 'flex-start', marginBottom: 4 }}>
+                  {/* Message bubble */}
+                  <div style={{
+                    maxWidth: '85%',
+                    padding: '10px 13px',
+                    borderRadius: m.from === 'user' ? '14px 14px 4px 14px' : '4px 14px 14px 14px',
+                    background: m.from === 'user'
+                      ? 'linear-gradient(135deg, var(--navy), #1e3a5f)'
+                      : 'var(--gray-100)',
+                    color: m.from === 'user' ? 'var(--white)' : 'var(--navy)',
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                    fontFamily: 'var(--font-body)',
+                    whiteSpace: 'pre-wrap',
+                  }}>
+                    {displayText}
+                  </div>
+                  
+                  {/* Action Buttons - only for AI messages that have actions */}
+                  {actions.length > 0 && (
+                    <div style={{ 
+                      display: 'flex', 
+                      flexWrap: 'wrap', 
+                      gap: 6, 
+                      marginTop: 8,
+                      maxWidth: '85%',
+                    }}>
+                      {actions.map((act, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => handleActionClick(act.action)}
+                          style={{
+                            padding: '6px 14px',
+                            borderRadius: 20,
+                            border: '1px solid var(--gold)',
+                            background: 'rgba(201,168,76,0.08)',
+                            color: 'var(--navy)',
+                            fontSize: 11,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s',
+                            fontFamily: 'var(--font-body)',
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.background = 'var(--gold)'
+                            e.currentTarget.style.color = 'var(--navy)'
+                            e.currentTarget.style.borderColor = 'var(--gold)'
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.background = 'rgba(201,168,76,0.08)'
+                            e.currentTarget.style.color = 'var(--navy)'
+                            e.currentTarget.style.borderColor = 'var(--gold)'
+                          }}
+                        >
+                          {act.label} →
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
 
             {typing && (
               <div style={{ display: 'flex', justifyContent: 'flex-start' }}>

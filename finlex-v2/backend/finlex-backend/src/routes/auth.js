@@ -20,9 +20,22 @@ router.post('/register', async (req, res) => {
       `INSERT INTO users(name,email,password_hash,role) VALUES($1,$2,$3,$4) RETURNING id,name,email,role`,
       [name, email, hash, role]
     )
+    
     const token = jwt.sign({ id: rows[0].id, email: rows[0].email }, process.env.JWT_SECRET, { expiresIn: '7d' })
-    res.status(201).json({ user: rows[0], token })
-  } catch (err) { res.status(500).json({ error: err.message }) }
+    
+    // ✅ FIX: Set HttpOnly cookie
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    })
+    
+    // ✅ DON'T send token in JSON body
+    res.status(201).json({ user: rows[0] }) // No token field!
+  } catch (err) { 
+    res.status(500).json({ error: err.message }) 
+  }
 })
 
 // POST /api/auth/login
@@ -39,9 +52,27 @@ router.post('/login', async (req, res) => {
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' })
 
     const token = jwt.sign({ id: rows[0].id, email: rows[0].email }, process.env.JWT_SECRET, { expiresIn: '7d' })
+    
+    // ✅ FIX: Set HttpOnly cookie
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    })
+    
     const { password_hash, ...user } = rows[0]
-    res.json({ user, token })
-  } catch (err) { res.status(500).json({ error: err.message }) }
+    // ✅ DON'T send token in JSON body
+    res.json({ user }) // No token field!
+  } catch (err) { 
+    res.status(500).json({ error: err.message }) 
+  }
+})
+
+// ✅ ADD THIS: Logout endpoint to clear cookie
+router.post('/logout', async (req, res) => {
+  res.clearCookie('token')
+  res.json({ message: 'Logged out successfully' })
 })
 
 // GET /api/auth/me
@@ -62,7 +93,9 @@ router.post('/change-password', auth, async (req, res) => {
     const hash = await bcrypt.hash(new_password, 12)
     await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [hash, req.user.id])
     res.json({ message: 'Password changed successfully' })
-  } catch (err) { res.status(500).json({ error: err.message }) }
+  } catch (err) { 
+    res.status(500).json({ error: err.message }) 
+  }
 })
 
 module.exports = router

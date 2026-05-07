@@ -1,3 +1,4 @@
+import * as XLSX from 'xlsx'
 import { useState, useEffect } from 'react'
 import { Building2, AlertTriangle, CheckCircle, Clock, TrendingUp, TrendingDown,
          Plus, RefreshCw, ChevronRight, IndianRupee, Calendar, FileText,
@@ -36,6 +37,23 @@ const INDIAN_STATES = [
 
 export default function MultiCompanyPage({ setPage }) {
   const { selectCompany }         = useAuth()
+
+  const exportPortfolio = () => {
+    const rows = companies.map(co => ({
+      'Company': co.name,
+      'GSTIN': co.gstin || '—',
+      'Revenue': parseFloat(co.revenue || 0),
+      'Expenses': parseFloat(co.expenses || 0),
+      'Net Profit/Loss': parseFloat(co.net_profit || 0),
+      'Overdue Filings': co.overdue_compliances || 0,
+      'Unpaid Invoices': co.unpaid_invoices || 0,
+      'Health Status': co.health || 'unknown',
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'CA Portfolio')
+    XLSX.writeFile(wb, `FinLex_CA_Portfolio_${new Date().toLocaleDateString('en-IN').replace(/\//g,'-')}.xlsx`)
+  }
   const [dashboard, setDashboard] = useState(null)
   const [loading, setLoading]     = useState(true)
   const [selected, setSelected]   = useState(null)

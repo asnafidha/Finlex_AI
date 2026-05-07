@@ -1,8 +1,10 @@
 const router = require('express').Router()
 const pool   = require('../config/db')
 const auth   = require('../middleware/auth')
+const companyAccess = require('../middleware/companyAccess')
 
 router.use(auth)
+router.use(companyAccess)
 
 // GET /api/bank-recon?company_id=xxx&matched=true/false
 router.get('/', async (req, res) => {
@@ -119,7 +121,7 @@ router.post('/import', async (req, res) => {
          JOIN accounts a ON a.id=jel.account_id
          WHERE je.company_id=$1 AND a.id=$2 AND ${col}=$3
            AND je.entry_date BETWEEN $4::date-3 AND $4::date+3
-         ORDER BY ABS(EXTRACT(EPOCH FROM (je.entry_date - $4::date))) ASC LIMIT 1`,
+         ORDER BY ABS(je.entry_date - $4::date) ASC LIMIT 1`,
         [company_id, account_id, amt, stmt.statement_date]
       )
 
@@ -176,7 +178,7 @@ router.post('/auto-match', async (req, res) => {
          JOIN accounts a ON a.id=jel.account_id
          WHERE je.company_id=$1 AND a.id=$2 AND ${col}=$3
            AND je.entry_date BETWEEN $4::date-5 AND $4::date+5
-         ORDER BY ABS(EXTRACT(EPOCH FROM (je.entry_date - $4::date))) ASC LIMIT 1`,
+         ORDER BY ABS(je.entry_date - $4::date) ASC LIMIT 1`,
         [company_id, account_id, amt, stmt.statement_date]
       )
 

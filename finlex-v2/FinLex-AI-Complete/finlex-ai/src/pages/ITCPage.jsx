@@ -89,7 +89,7 @@ export default function ITCPage() {
 
       {/* ITC Summary Cards */}
       {register && (() => {
-        const totalITC      = parseFloat(register.totals?.total_itc || 0)
+        const totalITC      = parseFloat(register.total_itc || 0)
         const totalPurchase = parseFloat(register.totals?.total_purchases || 0)
         const invoiceCount  = register.invoices?.length || 0
         const reconciled    = reconcile ? parseFloat(reconcile.summary?.eligible_itc || 0) : null

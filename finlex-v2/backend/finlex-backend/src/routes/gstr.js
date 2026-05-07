@@ -1,8 +1,10 @@
 const router = require('express').Router()
 const pool   = require('../config/db')
 const auth   = require('../middleware/auth')
+const companyAccess = require('../middleware/companyAccess')
 
 router.use(auth)
+router.use(companyAccess)
 
 async function getSalesInvoices(company_id, month, year) {
   let query = `

@@ -1,6 +1,6 @@
 const router = require('express').Router()
-const pool   = require('../config/db')
-const auth   = require('../middleware/auth')
+const pool = require('../config/db')
+const auth = require('../middleware/auth')
 
 router.use(auth)
 
@@ -11,9 +11,9 @@ router.get('/', async (req, res) => {
   if (!company_id) return res.status(400).json({ error: 'company_id required' })
 
   try {
-    const today     = new Date()
-    const todayStr  = today.toISOString().split('T')[0]
-    const actions   = []
+    const today = new Date()
+    const todayStr = today.toISOString().split('T')[0]
+    const actions = []
 
     // ── 1. Overdue compliance filings ─────────────────────────
     const { rows: overdueFilings } = await pool.query(
@@ -30,16 +30,16 @@ router.get('/', async (req, res) => {
       const dailyPenalty = penaltyMap[f.type] || 50
       const riskAmt = Math.min(parseFloat(f.days_overdue) * dailyPenalty, 10000)
       actions.push({
-        id:       `overdue_${f.type}_${f.name}`,
-        type:     'overdue_filing',
+        id: `overdue_${f.type}_${f.name}`,
+        type: 'overdue_filing',
         priority: 'critical',
-        title:    `${f.name} overdue`,
+        title: `${f.name} overdue`,
         subtitle: `${Math.round(f.days_overdue)} days late`,
-        amount:   riskAmt,
+        amount: riskAmt,
         amount_label: `₹${riskAmt.toLocaleString('en-IN')} penalty risk`,
-        cta:      'File Now',
-        page:     f.type === 'GST' ? 'compliance' : f.type === 'TDS' ? 'tds' : f.type === 'ITR' ? 'itr' : 'compliance',
-        icon:     '🚨',
+        cta: 'File Now',
+        page: f.type === 'GST' ? 'compliance' : f.type === 'TDS' ? 'tds' : f.type === 'ITR' ? 'itr' : 'compliance',
+        icon: '🚨',
       })
     }
 
@@ -56,16 +56,16 @@ router.get('/', async (req, res) => {
 
     for (const f of upcomingFilings) {
       actions.push({
-        id:           `upcoming_${f.type}_${f.name}`,
-        type:         'upcoming_filing',
-        priority:     'warning',
-        title:        `${f.name} due soon`,
-        subtitle:     `${Math.round(f.days_left)} days left`,
-        amount:       null,
+        id: `upcoming_${f.type}_${f.name}`,
+        type: 'upcoming_filing',
+        priority: 'warning',
+        title: `${f.name} due soon`,
+        subtitle: `${Math.round(f.days_left)} days left`,
+        amount: null,
         amount_label: `Due ${new Date(f.due_date).toLocaleDateString('en-IN')}`,
-        cta:          'Prepare Now',
-        page:         f.type === 'GST' ? 'gstr' : f.type === 'TDS' ? 'tds' : f.type === 'ITR' ? 'itr' : 'compliance',
-        icon:         '⏰',
+        cta: 'Prepare Now',
+        page: f.type === 'GST' ? 'gstr' : f.type === 'TDS' ? 'tds' : f.type === 'ITR' ? 'itr' : 'compliance',
+        icon: '⏰',
       })
     }
 
@@ -82,16 +82,16 @@ router.get('/', async (req, res) => {
 
     if (unpaidAmt > 0) {
       actions.push({
-        id:           'unpaid_invoices',
-        type:         'unpaid_invoices',
-        priority:     unpaidAmt > 100000 ? 'critical' : 'warning',
-        title:        `${unpaidCnt} unpaid invoice${unpaidCnt !== 1 ? 's' : ''}`,
-        subtitle:     'Cash stuck with customers',
-        amount:       unpaidAmt,
+        id: 'unpaid_invoices',
+        type: 'unpaid_invoices',
+        priority: unpaidAmt > 100000 ? 'critical' : 'warning',
+        title: `${unpaidCnt} unpaid invoice${unpaidCnt !== 1 ? 's' : ''}`,
+        subtitle: 'Cash stuck with customers',
+        amount: unpaidAmt,
         amount_label: `₹${unpaidAmt.toLocaleString('en-IN')} receivable`,
-        cta:          'Send Reminder',
-        page:         'gst',
-        icon:         '💰',
+        cta: 'View Aging',
+        page: 'payments',
+        icon: '💰',
       })
     }
 
@@ -112,16 +112,16 @@ router.get('/', async (req, res) => {
 
     if (itcBalance > 500) {
       actions.push({
-        id:           'itc_unreconciled',
-        type:         'itc_gap',
-        priority:     'warning',
-        title:        'ITC not reconciled with GSTR-2B',
-        subtitle:     'Potential input tax credit loss',
-        amount:       itcBalance,
+        id: 'itc_unreconciled',
+        type: 'itc_gap',
+        priority: 'warning',
+        title: 'ITC not reconciled with GSTR-2B',
+        subtitle: 'Potential input tax credit loss',
+        amount: itcBalance,
         amount_label: `₹${itcBalance.toLocaleString('en-IN')} ITC claimable`,
-        cta:          'Reconcile Now',
-        page:         'itc',
-        icon:         '✅',
+        cta: 'Reconcile Now',
+        page: 'itc',
+        icon: '✅',
       })
     }
 
@@ -136,16 +136,16 @@ router.get('/', async (req, res) => {
 
     if (tdsPending > 0) {
       actions.push({
-        id:           'tds_pending',
-        type:         'tds_pending',
-        priority:     'warning',
-        title:        'TDS not yet deposited',
-        subtitle:     'Missing challan numbers',
-        amount:       tdsPending,
+        id: 'tds_pending',
+        type: 'tds_pending',
+        priority: 'warning',
+        title: 'TDS not yet deposited',
+        subtitle: 'Missing challan numbers',
+        amount: tdsPending,
         amount_label: `₹${tdsPending.toLocaleString('en-IN')} TDS payable`,
-        cta:          'Pay TDS',
-        page:         'tds',
-        icon:         '🏛️',
+        cta: 'Pay TDS',
+        page: 'tds',
+        icon: '🏛️',
       })
     }
 
@@ -162,16 +162,16 @@ router.get('/', async (req, res) => {
 
     if (payableAmt > 0) {
       actions.push({
-        id:           'vendor_payables',
-        type:         'vendor_payables',
-        priority:     'info',
-        title:        `${payableCnt} vendor bill${payableCnt !== 1 ? 's' : ''} unpaid`,
-        subtitle:     'Accounts payable outstanding',
-        amount:       payableAmt,
+        id: 'vendor_payables',
+        type: 'vendor_payables',
+        priority: 'info',
+        title: `${payableCnt} vendor bill${payableCnt !== 1 ? 's' : ''} unpaid`,
+        subtitle: 'Accounts payable outstanding',
+        amount: payableAmt,
         amount_label: `₹${payableAmt.toLocaleString('en-IN')} payable`,
-        cta:          'Record Payment',
-        page:         'gst',
-        icon:         '📋',
+        cta: 'Record Payment',
+        page: 'payments',
+        icon: '📋',
       })
     }
 
@@ -183,9 +183,9 @@ router.get('/', async (req, res) => {
       actions,
       summary: {
         critical: actions.filter(a => a.priority === 'critical').length,
-        warning:  actions.filter(a => a.priority === 'warning').length,
-        info:     actions.filter(a => a.priority === 'info').length,
-        total:    actions.length,
+        warning: actions.filter(a => a.priority === 'warning').length,
+        info: actions.filter(a => a.priority === 'info').length,
+        total: actions.length,
         total_risk_amount: actions.reduce((s, a) => s + (a.amount || 0), 0),
       }
     })

@@ -1,8 +1,10 @@
 const router = require('express').Router()
 const pool = require('../config/db')
 const auth = require('../middleware/auth')
+const companyAccess = require('../middleware/companyAccess')
 
 router.use(auth)
+
 
 // All rates and thresholds per Finance Act 2024 / CBDT Circulars
 const TDS_SECTIONS = {
@@ -123,8 +125,12 @@ router.post('/entries', async (req, res) => {
     const bankAcc    = await getAcc('1002')
     const expenseAcc = await getAcc(expCode)
 
-    const { rows: countRows } = await client.query('SELECT COUNT(*) FROM journal_entries WHERE company_id=$1', [company_id])
-    const entryNum = `JE-${String(parseInt(countRows[0].count) + 1).padStart(4, '0')}`
+    const { rows: countRows } = await client.query(
+      `SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM 4) AS INTEGER)), 0) + 1 AS next
+       FROM journal_entries WHERE company_id=$1 FOR UPDATE`,
+      [company_id]
+    )
+    const entryNum = `JE-${String(countRows[0].next).padStart(4, '0')}`
 
     const je = await client.query(
       `INSERT INTO journal_entries(company_id,entry_number,entry_date,reference_type,narration,is_posted,created_by)

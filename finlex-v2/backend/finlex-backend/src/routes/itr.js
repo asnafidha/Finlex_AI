@@ -81,9 +81,14 @@ router.get('/computation', async (req, res) => {
     const total_expenses = parseFloat(expRows[0].total || 0)
     const net_profit     = gross_revenue - total_expenses
 
-    // Standard deduction FY 2024-25
-    const std_deduction  = regime === 'old' ? 50000 : 75000
-    const taxable_income = Math.max(0, net_profit - std_deduction)
+    // Standard deduction REMOVED — only for salaried (ITR-1/2), NOT for business income (ITR-3/4)
+    // Business income is taxed on net profit directly
+    const std_deduction = 0
+
+    // Brought forward business loss from prior years (Sec 72 — max 8 years)
+    // TODO: store in DB when implemented; using 0 as default
+    const brought_forward_loss = 0
+    const taxable_income = Math.max(0, net_profit - brought_forward_loss)
 
     const slabs = regime === 'new' ? TAX_SLABS_NEW : TAX_SLABS_OLD
     const { tax: income_tax, breakdown } = calculateTax(taxable_income, slabs)
@@ -135,13 +140,14 @@ router.get('/computation', async (req, res) => {
     ] : []
 
     // Compare regimes
-    const { tax: new_raw } = calculateTax(Math.max(0, net_profit - 75000), TAX_SLABS_NEW)
-    const new_rebate = Math.max(0, net_profit - 75000) <= 700000 ? Math.min(new_raw, 25000) : 0
-    const new_total  = Math.round(((new_raw - new_rebate) + computeSurcharge(Math.max(0, net_profit - 75000), Math.max(0, new_raw - new_rebate), 'new')) * 1.04)
+    // Comparison uses net_profit directly (no std deduction for business)
+    const { tax: new_raw } = calculateTax(Math.max(0, net_profit), TAX_SLABS_NEW)
+    const new_rebate = Math.max(0, net_profit) <= 700000 ? Math.min(new_raw, 25000) : 0
+    const new_total  = Math.round(((new_raw - new_rebate) + computeSurcharge(Math.max(0, net_profit), Math.max(0, new_raw - new_rebate), 'new')) * 1.04)
 
-    const { tax: old_raw } = calculateTax(Math.max(0, net_profit - 50000), TAX_SLABS_OLD)
-    const old_rebate = Math.max(0, net_profit - 50000) <= 500000 ? Math.min(old_raw, 12500) : 0
-    const old_total  = Math.round(((old_raw - old_rebate) + computeSurcharge(Math.max(0, net_profit - 50000), Math.max(0, old_raw - old_rebate), 'old')) * 1.04)
+    const { tax: old_raw } = calculateTax(Math.max(0, net_profit), TAX_SLABS_OLD)
+    const old_rebate = Math.max(0, net_profit) <= 500000 ? Math.min(old_raw, 12500) : 0
+    const old_total  = Math.round(((old_raw - old_rebate) + computeSurcharge(Math.max(0, net_profit), Math.max(0, old_raw - old_rebate), 'old')) * 1.04)
 
     const itr_json = {
       ITR: {
@@ -176,7 +182,9 @@ router.get('/computation', async (req, res) => {
       company: coRows[0].name, financial_year: fy, regime, taxpayer_type,
       income_computation: {
         gross_revenue: Math.round(gross_revenue), total_expenses: Math.round(total_expenses),
-        net_profit: Math.round(net_profit), standard_deduction: std_deduction,
+        net_profit: Math.round(net_profit),
+        standard_deduction: 0,  // not applicable for business income
+        brought_forward_loss: brought_forward_loss,
         taxable_income: Math.round(taxable_income),
       },
       tax_computation: {
