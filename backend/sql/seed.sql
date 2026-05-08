@@ -1,407 +1,306 @@
 -- ============================================================
--- FINLEX SEED DATA — Complete Test Data
--- Run: psql -U postgres -d finlex_db -f /tmp/seed.sql
+-- FINLEX AI — DEMO SEED DATA
+-- Creates 1 CA user + 3 companies with realistic Indian data
+-- Run: psql -U postgres -d finlex_db -f seed.sql
 -- ============================================================
 
--- Clean existing data
-TRUNCATE TABLE audit_log, tds_entries, journal_entry_lines, journal_entries,
-  invoice_items, invoices, compliance_deadlines, accounts, account_groups,
-  ca_company_access, companies, users RESTART IDENTITY CASCADE;
-
 -- ============================================================
--- 1. USER (CA)
--- Password: password123
+-- STEP 1: CREATE CA USER
+-- Password: Demo@1234 (bcrypt hashed)
 -- ============================================================
 INSERT INTO users (name, email, password_hash, role) VALUES
-('Fida Ahmed CA', 'fida@example.com', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGX.ZabC9mMdE7PcU1VYUiEeSOy', 'ca');
+('Arjun Menon', 'arjun@menon-ca.com', '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uNoLuFqsm', 'ca')
+ON CONFLICT (email) DO NOTHING;
 
 -- ============================================================
--- 2. COMPANIES
+-- STEP 2: CREATE 3 COMPANIES
 -- ============================================================
-INSERT INTO companies (name, gstin, pan, state_code, state_name, financial_year, fy_start_date, fy_end_date, address, phone, email, business_type, created_by) VALUES
-('Rahul Exports Pvt Ltd', '27AABCR1234A1Z5', 'AABCR1234A', '27', 'Maharashtra', '2024-25', '2024-04-01', '2025-03-31', '123 MG Road, Mumbai, Maharashtra 400001', '9876543210', 'rahul@rahulexports.com', 'private_limited', 1),
-('Kerala Spices Traders', '32AADCK5678B1Z3', 'AADCK5678B', '32', 'Kerala', '2024-25', '2024-04-01', '2025-03-31', '45 Spice Market, Kozhikode, Kerala 673001', '9845123456', 'info@keralaspices.com', 'proprietorship', 1);
+INSERT INTO companies (name, gstin, pan, state_code, state_name, financial_year, fy_start_date, fy_end_date, address, phone, email, business_type, gst_registered, created_by) VALUES
+(
+  'Kerala Spices Traders Pvt Ltd',
+  '32AABCK1234A1Z5',
+  'AABCK1234A',
+  '32',
+  'Kerala',
+  '2024-25',
+  '2024-04-01',
+  '2025-03-31',
+  '45/B, MG Road, Kozhikode, Kerala - 673001',
+  '9876543210',
+  'info@keralasp ices.com',
+  'private_limited',
+  true,
+  1
+),
+(
+  'TechNova Solutions Pvt Ltd',
+  '27AABCT5678B2Z6',
+  'AABCT5678B',
+  '27',
+  'Maharashtra',
+  '2024-25',
+  '2024-04-01',
+  '2025-03-31',
+  '301, Bandra Kurla Complex, Mumbai, Maharashtra - 400051',
+  '9123456789',
+  'accounts@technova.in',
+  'private_limited',
+  true,
+  1
+),
+(
+  'Hyderabad Electronics Pvt Ltd',
+  '36AABCH9012C3Z7',
+  'AABCH9012C',
+  '36',
+  'Telangana',
+  '2024-25',
+  '2024-04-01',
+  '2025-03-31',
+  '22, Hitech City, Madhapur, Hyderabad - 500081',
+  '9988776655',
+  'finance@hydelec.com',
+  'private_limited',
+  true,
+  1
+)
+ON CONFLICT DO NOTHING;
 
 -- ============================================================
--- 3. CA COMPANY ACCESS
+-- STEP 3: GRANT CA ACCESS TO ALL COMPANIES
 -- ============================================================
-INSERT INTO ca_company_access (ca_id, company_id, role) VALUES
-(1, 1, 'owner'),
-(1, 2, 'owner');
+INSERT INTO ca_company_access (ca_id, company_id, role)
+SELECT 1, id, 'owner' FROM companies WHERE name IN (
+  'Kerala Spices Traders Pvt Ltd',
+  'TechNova Solutions Pvt Ltd',
+  'Hyderabad Electronics Pvt Ltd'
+)
+ON CONFLICT DO NOTHING;
 
 -- ============================================================
--- 4. ACCOUNT GROUPS — Company 1
+-- STEP 4: SETUP DEFAULT ACCOUNTS FOR ALL 3 COMPANIES
 -- ============================================================
-INSERT INTO account_groups (company_id, name, type, nature) VALUES
-(1, 'Current Assets', 'asset', 'debit'),
-(1, 'Fixed Assets', 'asset', 'debit'),
-(1, 'Current Liabilities', 'liability', 'credit'),
-(1, 'Long Term Liabilities', 'liability', 'credit'),
-(1, 'Capital & Reserves', 'equity', 'credit'),
-(1, 'Direct Income', 'revenue', 'credit'),
-(1, 'Indirect Income', 'revenue', 'credit'),
-(1, 'Direct Expenses', 'expense', 'debit'),
-(1, 'Indirect Expenses', 'expense', 'debit');
-
--- Account Groups — Company 2
-INSERT INTO account_groups (company_id, name, type, nature) VALUES
-(2, 'Current Assets', 'asset', 'debit'),
-(2, 'Fixed Assets', 'asset', 'debit'),
-(2, 'Current Liabilities', 'liability', 'credit'),
-(2, 'Long Term Liabilities', 'liability', 'credit'),
-(2, 'Capital & Reserves', 'equity', 'credit'),
-(2, 'Direct Income', 'revenue', 'credit'),
-(2, 'Indirect Income', 'revenue', 'credit'),
-(2, 'Direct Expenses', 'expense', 'debit'),
-(2, 'Indirect Expenses', 'expense', 'debit');
+SELECT setup_default_accounts(id) FROM companies WHERE name IN (
+  'Kerala Spices Traders Pvt Ltd',
+  'TechNova Solutions Pvt Ltd',
+  'Hyderabad Electronics Pvt Ltd'
+);
 
 -- ============================================================
--- 5. ACCOUNTS — Company 1
+-- STEP 5: SALES INVOICES — Kerala Spices Traders (company 1)
 -- ============================================================
-INSERT INTO accounts (company_id, group_id, code, name, type, nature, is_system, opening_balance) VALUES
--- Assets
-(1, 1, '1001', 'Cash in Hand',        'asset', 'debit', true,  50000),
-(1, 1, '1002', 'Bank Account',        'asset', 'debit', true,  250000),
-(1, 1, '1003', 'Accounts Receivable', 'asset', 'debit', true,  0),
-(1, 1, '1004', 'Input GST (CGST)',    'asset', 'debit', true,  0),
-(1, 1, '1005', 'Input GST (SGST)',    'asset', 'debit', true,  0),
-(1, 1, '1006', 'Input GST (IGST)',    'asset', 'debit', true,  0),
-(1, 1, '1007', 'TDS Receivable',      'asset', 'debit', false, 0),
-(1, 2, '1101', 'Computer Equipment',  'asset', 'debit', false, 80000),
--- Liabilities
-(1, 3, '2001', 'Accounts Payable',    'liability', 'credit', true,  0),
-(1, 3, '2002', 'Output GST (CGST)',   'liability', 'credit', true,  0),
-(1, 3, '2003', 'Output GST (SGST)',   'liability', 'credit', true,  0),
-(1, 3, '2004', 'Output GST (IGST)',   'liability', 'credit', true,  0),
-(1, 3, '2005', 'TDS Payable',         'liability', 'credit', true,  0),
--- Equity
-(1, 5, '3001', 'Share Capital',       'equity', 'credit', true,  500000),
-(1, 5, '3002', 'Retained Earnings',   'equity', 'credit', true,  120000),
--- Revenue
-(1, 6, '4001', 'Sales Revenue',       'revenue', 'credit', true,  0),
-(1, 6, '4002', 'Service Revenue',     'revenue', 'credit', true,  0),
-(1, 7, '4101', 'Other Income',        'revenue', 'credit', false, 0),
--- Expenses
-(1, 8, '5001', 'Purchases',           'expense', 'debit', true,  0),
-(1, 9, '5101', 'Salaries & Wages',    'expense', 'debit', false, 0),
-(1, 9, '5102', 'Rent',                'expense', 'debit', false, 0),
-(1, 9, '5107', 'Professional Fees',   'expense', 'debit', false, 0),
-(1, 9, '5108', 'Bank Charges',        'expense', 'debit', false, 0),
-(1, 9, '5112', 'Misc Expense',        'expense', 'debit', false, 0);
+INSERT INTO invoices (company_id, invoice_type, invoice_number, invoice_date, due_date, party_name, party_gstin, party_state, subtotal, taxable_amount, cgst_amount, sgst_amount, igst_amount, total_amount, status, payment_status, supply_type) VALUES
+(1, 'sale', 'KST/2024/001', '2024-04-05', '2024-05-05', 'Rajesh Enterprises', '32AABCR1111A1Z1', '32', 85000.00, 85000.00, 7650.00, 7650.00, 0.00, 100300.00, 'confirmed', 'paid', 'regular'),
+(1, 'sale', 'KST/2024/002', '2024-04-12', '2024-05-12', 'Mumbai Masala Pvt Ltd', '27AABCM2222B2Z2', '27', 120000.00, 120000.00, 0.00, 0.00, 21600.00, 141600.00, 'confirmed', 'paid', 'regular'),
+(1, 'sale', 'KST/2024/003', '2024-05-03', '2024-06-03', 'Bangalore Grocers Ltd', '29AABCB3333C3Z3', '29', 95000.00, 95000.00, 0.00, 0.00, 17100.00, 112100.00, 'confirmed', 'unpaid', 'regular'),
+(1, 'sale', 'KST/2024/004', '2024-05-18', '2024-06-18', 'Chennai Foods Co', '33AABCC4444D4Z4', '33', 75000.00, 75000.00, 0.00, 0.00, 13500.00, 88500.00, 'confirmed', 'paid', 'regular'),
+(1, 'sale', 'KST/2024/005', '2024-06-02', '2024-07-02', 'Local Retail Store Kerala', '32AABCL5555E5Z5', '32', 45000.00, 45000.00, 4050.00, 4050.00, 0.00, 53100.00, 'confirmed', 'unpaid', 'regular'),
+(1, 'sale', 'KST/2024/006', '2024-06-20', '2024-07-20', 'Delhi Spice House', '07AABCD6666F6Z6', '07', 180000.00, 180000.00, 0.00, 0.00, 32400.00, 212400.00, 'confirmed', 'paid', 'regular'),
+(1, 'sale', 'KST/2024/007', '2024-07-08', '2024-08-08', 'Rajesh Enterprises', '32AABCR1111A1Z1', '32', 92000.00, 92000.00, 8280.00, 8280.00, 0.00, 108560.00, 'confirmed', 'paid', 'regular'),
+(1, 'sale', 'KST/2024/008', '2024-07-25', '2024-08-25', 'Kolkata Traders', '19AABCK7777G7Z7', '19', 65000.00, 65000.00, 0.00, 0.00, 11700.00, 76700.00, 'confirmed', 'unpaid', 'regular');
 
--- Accounts — Company 2
-INSERT INTO accounts (company_id, group_id, code, name, type, nature, is_system, opening_balance) VALUES
-(2, 10, '1001', 'Cash in Hand',        'asset', 'debit', true,  30000),
-(2, 10, '1002', 'Bank Account',        'asset', 'debit', true,  150000),
-(2, 10, '1003', 'Accounts Receivable', 'asset', 'debit', true,  0),
-(2, 10, '1004', 'Input GST (CGST)',    'asset', 'debit', true,  0),
-(2, 10, '1005', 'Input GST (SGST)',    'asset', 'debit', true,  0),
-(2, 10, '1006', 'Input GST (IGST)',    'asset', 'debit', true,  0),
-(2, 12, '2001', 'Accounts Payable',    'liability', 'credit', true,  0),
-(2, 12, '2002', 'Output GST (CGST)',   'liability', 'credit', true,  0),
-(2, 12, '2003', 'Output GST (SGST)',   'liability', 'credit', true,  0),
-(2, 12, '2004', 'Output GST (IGST)',   'liability', 'credit', true,  0),
-(2, 12, '2005', 'TDS Payable',         'liability', 'credit', true,  0),
-(2, 14, '3001', 'Share Capital',       'equity', 'credit', true,  300000),
-(2, 15, '4001', 'Sales Revenue',       'revenue', 'credit', true,  0),
-(2, 15, '4002', 'Service Revenue',     'revenue', 'credit', true,  0),
-(2, 17, '5001', 'Purchases',           'expense', 'debit', true,  0),
-(2, 18, '5101', 'Salaries & Wages',    'expense', 'debit', false, 0),
-(2, 18, '5107', 'Professional Fees',   'expense', 'debit', false, 0);
+-- Purchase invoices for Kerala Spices
+INSERT INTO invoices (company_id, invoice_type, invoice_number, invoice_date, due_date, party_name, party_gstin, party_state, subtotal, taxable_amount, cgst_amount, sgst_amount, igst_amount, total_amount, status, payment_status, supply_type) VALUES
+(1, 'purchase', 'PUR/KST/001', '2024-04-02', '2024-05-02', 'Wayanad Spice Farm', '32AABCW8888H8Z8', '32', 55000.00, 55000.00, 2750.00, 2750.00, 0.00, 60500.00, 'confirmed', 'paid', 'regular'),
+(1, 'purchase', 'PUR/KST/002', '2024-04-20', '2024-05-20', 'Idukki Cardamom Co', '32AABCI9999I9Z9', '32', 80000.00, 80000.00, 4000.00, 4000.00, 0.00, 88000.00, 'confirmed', 'paid', 'regular'),
+(1, 'purchase', 'PUR/KST/003', '2024-05-10', '2024-06-10', 'Tamil Nadu Pepper Traders', '33AABCT1010J1Z1', '33', 45000.00, 45000.00, 0.00, 0.00, 2250.00, 47250.00, 'confirmed', 'unpaid', 'regular'),
+(1, 'purchase', 'PUR/KST/004', '2024-06-15', '2024-07-15', 'Packaging Solutions Kerala', '32AABCP2020K2Z2', '32', 12000.00, 12000.00, 1080.00, 1080.00, 0.00, 14160.00, 'confirmed', 'paid', 'regular');
 
 -- ============================================================
--- 6. COMPLIANCE DEADLINES — Company 1
+-- STEP 6: SALES INVOICES — TechNova Solutions (company 2)
 -- ============================================================
-INSERT INTO compliance_deadlines (company_id, type, name, due_date, financial_year, status) VALUES
-(1, 'GST',          'GSTR-1 Filing (Apr 2024)',       '2024-05-11', '2024-25', 'completed'),
-(1, 'GST',          'GSTR-3B Filing (Apr 2024)',      '2024-05-20', '2024-25', 'completed'),
-(1, 'GST',          'GSTR-1 Filing (May 2024)',       '2024-06-11', '2024-25', 'completed'),
-(1, 'GST',          'GSTR-3B Filing (May 2024)',      '2024-06-20', '2024-25', 'completed'),
-(1, 'GST',          'GSTR-1 Filing (Jun 2024)',       '2024-07-11', '2024-25', 'completed'),
-(1, 'GST',          'GSTR-3B Filing (Jun 2024)',      '2024-07-20', '2024-25', 'completed'),
-(1, 'TDS',          'TDS Return Q1 (Apr-Jun 2024)',   '2024-07-31', '2024-25', 'completed'),
-(1, 'ADVANCE_TAX',  'Advance Tax Q1',                 '2024-06-15', '2024-25', 'completed'),
-(1, 'ADVANCE_TAX',  'Advance Tax Q2',                 '2024-09-15', '2024-25', 'completed'),
-(1, 'TDS',          'TDS Return Q2 (Jul-Sep 2024)',   '2024-10-31', '2024-25', 'completed'),
-(1, 'ADVANCE_TAX',  'Advance Tax Q3',                 '2024-12-15', '2024-25', 'completed'),
-(1, 'TDS',          'TDS Return Q3 (Oct-Dec 2024)',   '2025-01-31', '2024-25', 'pending'),
-(1, 'GST',          'GSTR-1 Filing (Jan 2025)',       '2025-02-11', '2024-25', 'pending'),
-(1, 'GST',          'GSTR-3B Filing (Jan 2025)',      '2025-02-20', '2024-25', 'pending'),
-(1, 'GST',          'GSTR-1 Filing (Feb 2025)',       '2025-03-11', '2024-25', 'pending'),
-(1, 'GST',          'GSTR-3B Filing (Feb 2025)',      '2025-03-20', '2024-25', 'pending'),
-(1, 'ADVANCE_TAX',  'Advance Tax Q4',                 '2025-03-15', '2024-25', 'pending'),
-(1, 'TDS',          'TDS Return Q4 (Jan-Mar 2025)',   '2025-05-31', '2024-25', 'pending'),
-(1, 'ITR',          'ITR Filing FY 2024-25',          '2025-07-31', '2024-25', 'pending'),
-(1, 'ROC',          'ROC Annual Return',              '2025-09-30', '2024-25', 'pending');
+INSERT INTO invoices (company_id, invoice_type, invoice_number, invoice_date, due_date, party_name, party_gstin, party_state, subtotal, taxable_amount, cgst_amount, sgst_amount, igst_amount, total_amount, status, payment_status, supply_type) VALUES
+(2, 'sale', 'TNS/2024/001', '2024-04-08', '2024-05-08', 'Infosys Ltd', '29AABCI3030L3Z3', '29', 250000.00, 250000.00, 0.00, 0.00, 45000.00, 295000.00, 'confirmed', 'paid', 'regular'),
+(2, 'sale', 'TNS/2024/002', '2024-04-22', '2024-05-22', 'Wipro Technologies', '29AABCW4040M4Z4', '29', 180000.00, 180000.00, 0.00, 0.00, 32400.00, 212400.00, 'confirmed', 'paid', 'regular'),
+(2, 'sale', 'TNS/2024/003', '2024-05-15', '2024-06-15', 'HDFC Bank Ltd', '27AABCH5050N5Z5', '27', 320000.00, 320000.00, 28800.00, 28800.00, 0.00, 377600.00, 'confirmed', 'unpaid', 'regular'),
+(2, 'sale', 'TNS/2024/004', '2024-06-05', '2024-07-05', 'Tata Consultancy', '27AABCT6060O6Z6', '27', 420000.00, 420000.00, 37800.00, 37800.00, 0.00, 495600.00, 'confirmed', 'paid', 'regular'),
+(2, 'sale', 'TNS/2024/005', '2024-06-28', '2024-07-28', 'Reliance Industries', '27AABCR7070P7Z7', '27', 550000.00, 550000.00, 49500.00, 49500.00, 0.00, 649000.00, 'confirmed', 'paid', 'regular'),
+(2, 'sale', 'TNS/2024/006', '2024-07-12', '2024-08-12', 'Zomato Ltd', '07AABCZ8080Q8Z8', '07', 150000.00, 150000.00, 0.00, 0.00, 27000.00, 177000.00, 'confirmed', 'unpaid', 'regular');
 
--- Compliance — Company 2
-INSERT INTO compliance_deadlines (company_id, type, name, due_date, financial_year, status) VALUES
-(2, 'GST',         'GSTR-1 Filing (Apr 2024)',       '2024-05-11', '2024-25', 'completed'),
-(2, 'GST',         'GSTR-3B Filing (Apr 2024)',      '2024-05-20', '2024-25', 'completed'),
-(2, 'TDS',         'TDS Return Q1',                  '2024-07-31', '2024-25', 'completed'),
-(2, 'GST',         'GSTR-1 Filing (Jan 2025)',       '2025-02-11', '2024-25', 'pending'),
-(2, 'GST',         'GSTR-3B Filing (Jan 2025)',      '2025-02-20', '2024-25', 'pending'),
-(2, 'ITR',         'ITR Filing FY 2024-25',          '2025-07-31', '2024-25', 'pending');
+-- Purchase invoices for TechNova
+INSERT INTO invoices (company_id, invoice_type, invoice_number, invoice_date, due_date, party_name, party_gstin, party_state, subtotal, taxable_amount, cgst_amount, sgst_amount, igst_amount, total_amount, status, payment_status, supply_type) VALUES
+(2, 'purchase', 'PUR/TNS/001', '2024-04-05', '2024-05-05', 'AWS India Pvt Ltd', '07AABCA9090R9Z9', '07', 85000.00, 85000.00, 0.00, 0.00, 15300.00, 100300.00, 'confirmed', 'paid', 'regular'),
+(2, 'purchase', 'PUR/TNS/002', '2024-05-01', '2024-06-01', 'Microsoft India', '07AABCM1111S1Z1', '07', 45000.00, 45000.00, 0.00, 0.00, 8100.00, 53100.00, 'confirmed', 'paid', 'regular'),
+(2, 'purchase', 'PUR/TNS/003', '2024-06-01', '2024-07-01', 'Airtel Business', '27AABCA2222T2Z2', '27', 18000.00, 18000.00, 1620.00, 1620.00, 0.00, 21240.00, 'confirmed', 'paid', 'regular');
 
 -- ============================================================
--- 7. INVOICES — Company 1 (Sales)
+-- STEP 7: SALES INVOICES — Hyderabad Electronics (company 3)
 -- ============================================================
-INSERT INTO invoices (company_id, invoice_type, invoice_number, invoice_date, due_date, party_name, party_gstin, party_state, subtotal, taxable_amount, cgst_amount, sgst_amount, igst_amount, total_amount, status, payment_status, notes) VALUES
--- Intra-state sales (Maharashtra to Maharashtra) — CGST + SGST
-(1, 'sale', 'INV-2024-001', '2024-04-05', '2024-05-05', 'Tech Solutions Mumbai',   '27AABCT9876B1Z1', '27', 100000, 100000, 9000, 9000, 0,     118000, 'confirmed', 'paid',   'Software services April'),
-(1, 'sale', 'INV-2024-002', '2024-05-10', '2024-06-10', 'Pune Distributors Ltd',   '27AAECP4567C1Z2', '27', 50000,  50000,  4500, 4500, 0,     59000,  'confirmed', 'paid',   'Product supply May'),
-(1, 'sale', 'INV-2024-003', '2024-06-15', '2024-07-15', 'Mumbai Retailers Co',     '27AABCM7654D1Z3', '27', 75000,  75000,  6750, 6750, 0,     88500,  'confirmed', 'partial','Goods June'),
--- Inter-state sales (Maharashtra to Kerala) — IGST
-(1, 'sale', 'INV-2024-004', '2024-07-20', '2024-08-20', 'Kerala Imports Pvt Ltd',  '32AABCK3456E1Z4', '32', 200000, 200000, 0,    0,    36000, 236000, 'confirmed', 'unpaid', 'Export goods July'),
-(1, 'sale', 'INV-2024-005', '2024-08-25', '2024-09-25', 'Bangalore Tech Corp',     '29AABCB8901F1Z5', '29', 150000, 150000, 0,    0,    27000, 177000, 'confirmed', 'paid',   'IT services Aug'),
-(1, 'sale', 'INV-2024-006', '2024-09-30', '2024-10-30', 'Delhi Enterprises',       '07AABCD2345G1Z6', '07', 80000,  80000,  0,    0,    14400, 94400,  'confirmed', 'unpaid', 'Consulting Sep'),
-(1, 'sale', 'INV-2024-007', '2024-10-05', '2024-11-05', 'Tech Solutions Mumbai',   '27AABCT9876B1Z1', '27', 120000, 120000, 10800,10800,0,     141600, 'confirmed', 'paid',   'Software Oct'),
-(1, 'sale', 'INV-2024-008', '2024-11-10', '2024-12-10', 'Pune Distributors Ltd',   '27AAECP4567C1Z2', '27', 90000,  90000,  8100, 8100, 0,     106200, 'confirmed', 'paid',   'Products Nov'),
-(1, 'sale', 'INV-2024-009', '2024-12-15', '2025-01-15', 'Gujarat Traders',         '24AABCG5678H1Z7', '24', 60000,  60000,  0,    0,    10800, 70800,  'confirmed', 'unpaid', 'Goods Dec'),
-(1, 'sale', 'INV-2025-001', '2025-01-20', '2025-02-20', 'Mumbai Retailers Co',     '27AABCM7654D1Z3', '27', 110000, 110000, 9900, 9900, 0,     129800, 'confirmed', 'unpaid', 'Jan supply');
+INSERT INTO invoices (company_id, invoice_type, invoice_number, invoice_date, due_date, party_name, party_gstin, party_state, subtotal, taxable_amount, cgst_amount, sgst_amount, igst_amount, total_amount, status, payment_status, supply_type) VALUES
+(3, 'sale', 'HEL/2024/001', '2024-04-10', '2024-05-10', 'Croma Retail Ltd', '27AABCC3333U3Z3', '27', 350000.00, 350000.00, 0.00, 0.00, 63000.00, 413000.00, 'confirmed', 'paid', 'regular'),
+(3, 'sale', 'HEL/2024/002', '2024-04-28', '2024-05-28', 'Reliance Digital', '27AABCR4444V4Z4', '27', 280000.00, 280000.00, 0.00, 0.00, 50400.00, 330400.00, 'confirmed', 'paid', 'regular'),
+(3, 'sale', 'HEL/2024/003', '2024-05-20', '2024-06-20', 'Viveks Electronics Chennai', '33AABCV5555W5Z5', '33', 195000.00, 195000.00, 0.00, 0.00, 35100.00, 230100.00, 'confirmed', 'unpaid', 'regular'),
+(3, 'sale', 'HEL/2024/004', '2024-06-10', '2024-07-10', 'Local Dealer Hyderabad', '36AABCL6666X6Z6', '36', 125000.00, 125000.00, 11250.00, 11250.00, 0.00, 147500.00, 'confirmed', 'paid', 'regular'),
+(3, 'sale', 'HEL/2024/005', '2024-07-05', '2024-08-05', 'Amazon Seller Services', '29AABCA7777Y7Z7', '29', 420000.00, 420000.00, 0.00, 0.00, 75600.00, 495600.00, 'confirmed', 'paid', 'regular');
 
--- Company 1 — Purchase Invoices
-INSERT INTO invoices (company_id, invoice_type, invoice_number, invoice_date, due_date, party_name, party_gstin, party_state, subtotal, taxable_amount, cgst_amount, sgst_amount, igst_amount, total_amount, status, payment_status) VALUES
-(1, 'purchase', 'PUR-2024-001', '2024-04-10', '2024-05-10', 'Raw Materials Co',      '27AABCR5432I1Z8', '27', 40000,  40000,  3600, 3600, 0,     47200,  'confirmed', 'paid'),
-(1, 'purchase', 'PUR-2024-002', '2024-05-15', '2024-06-15', 'Office Supplies Hub',   '27AABCO6789J1Z9', '27', 15000,  15000,  1350, 1350, 0,     17700,  'confirmed', 'paid'),
-(1, 'purchase', 'PUR-2024-003', '2024-06-20', '2024-07-20', 'Chennai Suppliers Ltd', '33AABCC9012K1Z0', '33', 80000,  80000,  0,    0,    14400, 94400,  'confirmed', 'paid'),
-(1, 'purchase', 'PUR-2024-004', '2024-09-10', '2024-10-10', 'Raw Materials Co',      '27AABCR5432I1Z8', '27', 55000,  55000,  4950, 4950, 0,     64900,  'confirmed', 'paid'),
-(1, 'purchase', 'PUR-2024-005', '2024-12-05', '2025-01-05', 'Tech Equipment Delhi',  '07AABCT1234L1Z1', '07', 120000, 120000, 0,    0,    21600, 141600, 'confirmed', 'unpaid');
-
--- Company 2 Invoices
-INSERT INTO invoices (company_id, invoice_type, invoice_number, invoice_date, due_date, party_name, party_gstin, party_state, subtotal, taxable_amount, cgst_amount, sgst_amount, igst_amount, total_amount, status, payment_status) VALUES
-(2, 'sale', 'KST-2024-001', '2024-04-12', '2024-05-12', 'Mumbai Spice Importers', '27AABCM1234M1Z2', '27', 45000, 45000, 0,    0,    8100, 53100, 'confirmed', 'paid'),
-(2, 'sale', 'KST-2024-002', '2024-07-18', '2024-08-18', 'Bangalore Groceries',    '29AABCB5678N1Z3', '29', 32000, 32000, 0,    0,    5760, 37760, 'confirmed', 'paid'),
-(2, 'sale', 'KST-2024-003', '2024-11-22', '2024-12-22', 'Delhi Food Corp',        '07AABCD9012O1Z4', '07', 67000, 67000, 0,    0,    12060,79060, 'confirmed', 'unpaid'),
-(2, 'purchase', 'KPR-2024-001', '2024-04-20', '2024-05-20', 'Spice Farm Kerala', '32AABCS3456P1Z5', '32', 20000, 20000, 1800, 1800, 0, 23600, 'confirmed', 'paid');
+-- Purchase invoices for Hyderabad Electronics
+INSERT INTO invoices (company_id, invoice_type, invoice_number, invoice_date, due_date, party_name, party_gstin, party_state, subtotal, taxable_amount, cgst_amount, sgst_amount, igst_amount, total_amount, status, payment_status, supply_type) VALUES
+(3, 'purchase', 'PUR/HEL/001', '2024-04-03', '2024-05-03', 'Samsung India Electronics', '06AABCS8888Z8Z8', '06', 250000.00, 250000.00, 0.00, 0.00, 45000.00, 295000.00, 'confirmed', 'paid', 'regular'),
+(3, 'purchase', 'PUR/HEL/002', '2024-05-05', '2024-06-05', 'LG Electronics India', '29AABCL9999A9Z9', '29', 180000.00, 180000.00, 0.00, 0.00, 32400.00, 212400.00, 'confirmed', 'paid', 'regular'),
+(3, 'purchase', 'PUR/HEL/003', '2024-06-08', '2024-07-08', 'Bosch India Ltd', '29AABCB1010B1Z1', '29', 95000.00, 95000.00, 0.00, 0.00, 17100.00, 112100.00, 'confirmed', 'unpaid', 'regular');
 
 -- ============================================================
--- 8. INVOICE ITEMS — Company 1 Sales
+-- STEP 8: INVOICE ITEMS (for first few invoices)
 -- ============================================================
 INSERT INTO invoice_items (invoice_id, description, hsn_sac_code, quantity, unit, rate, taxable_amount, gst_rate, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, total_amount) VALUES
-(1, 'Software Development Services', '998314', 1, 'NOS', 100000, 100000, 18, 9, 9, 0, 9000,  9000,  0,     118000),
-(2, 'Electronic Components',         '8542',   100,'PCS', 500,    50000,  18, 9, 9, 0, 4500,  4500,  0,     59000),
-(3, 'Hardware Goods',                '8471',   50, 'PCS', 1500,   75000,  18, 9, 9, 0, 6750,  6750,  0,     88500),
-(4, 'Export Goods — Spices',         '0910',   200,'KG',  1000,   200000, 18, 0, 0, 18,0,     0,     36000, 236000),
-(5, 'IT Consulting Services',        '998313', 1,  'NOS', 150000, 150000, 18, 0, 0, 18,0,     0,     27000, 177000),
-(6, 'Business Consulting',           '998311', 1,  'NOS', 80000,  80000,  18, 0, 0, 18,0,     0,     14400, 94400),
-(7, 'Software License',              '998315', 1,  'NOS', 120000, 120000, 18, 9, 9, 0, 10800, 10800, 0,     141600),
-(8, 'Electronic Products',           '8542',   150,'PCS', 600,    90000,  18, 9, 9, 0, 8100,  8100,  0,     106200),
-(9, 'Textile Goods',                 '5208',   100,'MTR', 600,    60000,  18, 0, 0, 18,0,     0,     10800, 70800),
-(10,'Hardware Supply',               '8471',   80, 'PCS', 1375,   110000, 18, 9, 9, 0, 9900,  9900,  0,     129800);
-
--- Invoice items for purchases
-INSERT INTO invoice_items (invoice_id, description, hsn_sac_code, quantity, unit, rate, taxable_amount, gst_rate, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, total_amount) VALUES
-(11,'Raw Materials — Steel',    '7208', 20, 'KG',  2000,  40000,  18, 9, 9, 0,  3600, 3600, 0,     47200),
-(12,'Office Stationery',        '4820', 1,  'LOT', 15000, 15000,  18, 9, 9, 0,  1350, 1350, 0,     17700),
-(13,'Electronic Components',    '8542', 100,'PCS', 800,   80000,  18, 0, 0, 18, 0,    0,    14400, 94400),
-(14,'Raw Materials — Copper',   '7408', 25, 'KG',  2200,  55000,  18, 9, 9, 0,  4950, 4950, 0,     64900),
-(15,'Computer Equipment',       '8471', 2,  'PCS', 60000, 120000, 18, 0, 0, 18, 0,    0,    21600, 141600);
-
--- Invoice items Company 2
-INSERT INTO invoice_items (invoice_id, description, hsn_sac_code, quantity, unit, rate, taxable_amount, gst_rate, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, total_amount) VALUES
-(16,'Black Pepper Export',  '0904', 150,'KG', 300,  45000, 18, 0, 0, 18, 0,    0,    8100, 53100),
-(17,'Cardamom Supply',      '0908', 80, 'KG', 400,  32000, 18, 0, 0, 18, 0,    0,    5760, 37760),
-(18,'Mixed Spices',         '0910', 200,'KG', 335,  67000, 18, 0, 0, 18, 0,    0,    12060,79060),
-(19,'Raw Spices Purchase',  '0910', 100,'KG', 200,  20000, 18, 9, 9, 0,  1800, 1800, 0,    23600);
+-- KST/2024/001
+(1, 'Black Pepper Grade A', '0904', 50.000, 'KG', 1200.00, 60000.00, 18, 9, 9, 0, 5400.00, 5400.00, 0.00, 70800.00),
+(1, 'Cardamom Small', '0908', 5.000, 'KG', 5000.00, 25000.00, 18, 9, 9, 0, 2250.00, 2250.00, 0.00, 29500.00),
+-- KST/2024/002
+(2, 'Turmeric Powder', '0910', 200.000, 'KG', 180.00, 36000.00, 18, 0, 0, 18, 0.00, 0.00, 6480.00, 42480.00),
+(2, 'Coriander Seeds', '0909', 300.000, 'KG', 140.00, 42000.00, 18, 0, 0, 18, 0.00, 0.00, 7560.00, 49560.00),
+(2, 'Cloves Premium', '0907', 20.000, 'KG', 2100.00, 42000.00, 18, 0, 0, 18, 0.00, 0.00, 7560.00, 49560.00),
+-- TNS/2024/001
+(9, 'Software Development Services', '998313', 1.000, 'NOS', 250000.00, 250000.00, 18, 0, 0, 18, 0.00, 0.00, 45000.00, 295000.00),
+-- TNS/2024/002
+(10, 'IT Consulting Services', '998314', 1.000, 'NOS', 180000.00, 180000.00, 18, 0, 0, 18, 0.00, 0.00, 32400.00, 212400.00),
+-- HEL/2024/001
+(15, 'Samsung 65" QLED TV', '8528', 5.000, 'NOS', 45000.00, 225000.00, 18, 0, 0, 18, 0.00, 0.00, 40500.00, 265500.00),
+(15, 'LG Refrigerator 340L', '8418', 5.000, 'NOS', 25000.00, 125000.00, 18, 0, 0, 18, 0.00, 0.00, 22500.00, 147500.00);
 
 -- ============================================================
--- 9. JOURNAL ENTRIES — Company 1
--- ============================================================
-INSERT INTO journal_entries (company_id, entry_number, entry_date, reference_type, reference_id, narration, is_posted, created_by) VALUES
--- Sales invoice journals
-(1,'JE-0001','2024-04-05','invoice',1, 'Sales Invoice INV-2024-001 — Tech Solutions Mumbai', true, 1),
-(1,'JE-0002','2024-05-10','invoice',2, 'Sales Invoice INV-2024-002 — Pune Distributors Ltd', true, 1),
-(1,'JE-0003','2024-06-15','invoice',3, 'Sales Invoice INV-2024-003 — Mumbai Retailers Co',  true, 1),
-(1,'JE-0004','2024-07-20','invoice',4, 'Sales Invoice INV-2024-004 — Kerala Imports Pvt Ltd',true,1),
-(1,'JE-0005','2024-08-25','invoice',5, 'Sales Invoice INV-2024-005 — Bangalore Tech Corp',  true, 1),
-(1,'JE-0006','2024-09-30','invoice',6, 'Sales Invoice INV-2024-006 — Delhi Enterprises',    true, 1),
-(1,'JE-0007','2024-10-05','invoice',7, 'Sales Invoice INV-2024-007 — Tech Solutions Mumbai', true, 1),
-(1,'JE-0008','2024-11-10','invoice',8, 'Sales Invoice INV-2024-008 — Pune Distributors Ltd', true, 1),
-(1,'JE-0009','2024-12-15','invoice',9, 'Sales Invoice INV-2024-009 — Gujarat Traders',      true, 1),
-(1,'JE-0010','2025-01-20','invoice',10,'Sales Invoice INV-2025-001 — Mumbai Retailers Co',  true, 1),
--- Purchase invoice journals
-(1,'JE-0011','2024-04-10','invoice',11,'Purchase Invoice PUR-2024-001 — Raw Materials Co',    true, 1),
-(1,'JE-0012','2024-05-15','invoice',12,'Purchase Invoice PUR-2024-002 — Office Supplies Hub', true, 1),
-(1,'JE-0013','2024-06-20','invoice',13,'Purchase Invoice PUR-2024-003 — Chennai Suppliers',   true, 1),
-(1,'JE-0014','2024-09-10','invoice',14,'Purchase Invoice PUR-2024-004 — Raw Materials Co',    true, 1),
-(1,'JE-0015','2024-12-05','invoice',15,'Purchase Invoice PUR-2024-005 — Tech Equipment Delhi',true, 1),
--- Payment journals
-(1,'JE-0016','2024-04-20','payment',1, 'Payment received — Tech Solutions Mumbai — INV-2024-001', true, 1),
-(1,'JE-0017','2024-05-25','payment',2, 'Payment received — Pune Distributors — INV-2024-002',    true, 1),
-(1,'JE-0018','2024-04-15','payment',11,'Payment made — Raw Materials Co — PUR-2024-001',         true, 1),
-(1,'JE-0019','2024-08-30','payment',5, 'Payment received — Bangalore Tech Corp — INV-2024-005',  true, 1),
-(1,'JE-0020','2024-11-20','payment',8, 'Payment received — Pune Distributors — INV-2024-008',    true, 1),
--- Manual journal — Salary
-(1,'JE-0021','2024-04-30','manual', NULL,'Salary payment for April 2024', true, 1),
-(1,'JE-0022','2024-05-31','manual', NULL,'Salary payment for May 2024',   true, 1),
-(1,'JE-0023','2024-06-30','manual', NULL,'Rent payment for Q1 2024',      true, 1),
--- TDS journals
-(1,'JE-0024','2024-07-05','tds',   NULL,'TDS on Professional Services — LegalEdge Associates — Section 194J', true, 1),
-(1,'JE-0025','2024-10-10','tds',   NULL,'TDS on Rent — Premises Owner — Section 194I', true, 1);
-
--- ============================================================
--- 10. JOURNAL ENTRY LINES — Company 1
--- ============================================================
--- JE-0001: Sales INV-2024-001 (intra-state, 118000 total)
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(1, 3,  118000, 0,      'Accounts Receivable'),
-(1, 16, 0,      100000, 'Sales Revenue'),
-(1, 10, 0,      9000,   'CGST Payable'),
-(1, 11, 0,      9000,   'SGST Payable');
-
--- JE-0002: Sales INV-2024-002
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(2, 3,  59000, 0,     'Accounts Receivable'),
-(2, 16, 0,     50000, 'Sales Revenue'),
-(2, 10, 0,     4500,  'CGST Payable'),
-(2, 11, 0,     4500,  'SGST Payable');
-
--- JE-0003: Sales INV-2024-003
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(3, 3,  88500, 0,     'Accounts Receivable'),
-(3, 16, 0,     75000, 'Sales Revenue'),
-(3, 10, 0,     6750,  'CGST Payable'),
-(3, 11, 0,     6750,  'SGST Payable');
-
--- JE-0004: Sales INV-2024-004 (inter-state, IGST)
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(4, 3,  236000, 0,      'Accounts Receivable'),
-(4, 16, 0,      200000, 'Sales Revenue'),
-(4, 12, 0,      36000,  'IGST Payable');
-
--- JE-0005: Sales INV-2024-005
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(5, 3,  177000, 0,      'Accounts Receivable'),
-(5, 17, 0,      150000, 'Service Revenue'),
-(5, 12, 0,      27000,  'IGST Payable');
-
--- JE-0006: Sales INV-2024-006
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(6, 3,  94400, 0,     'Accounts Receivable'),
-(6, 17, 0,     80000, 'Service Revenue'),
-(6, 12, 0,     14400, 'IGST Payable');
-
--- JE-0007: Sales INV-2024-007
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(7, 3,  141600, 0,      'Accounts Receivable'),
-(7, 16, 0,      120000, 'Sales Revenue'),
-(7, 10, 0,      10800,  'CGST Payable'),
-(7, 11, 0,      10800,  'SGST Payable');
-
--- JE-0008: Sales INV-2024-008
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(8, 3,  106200, 0,     'Accounts Receivable'),
-(8, 16, 0,      90000, 'Sales Revenue'),
-(8, 10, 0,      8100,  'CGST Payable'),
-(8, 11, 0,      8100,  'SGST Payable');
-
--- JE-0009: Sales INV-2024-009
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(9, 3,  70800, 0,     'Accounts Receivable'),
-(9, 16, 0,     60000, 'Sales Revenue'),
-(9, 12, 0,     10800, 'IGST Payable');
-
--- JE-0010: Sales INV-2025-001
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(10, 3,  129800, 0,      'Accounts Receivable'),
-(10, 16, 0,      110000, 'Sales Revenue'),
-(10, 10, 0,      9900,   'CGST Payable'),
-(10, 11, 0,      9900,   'SGST Payable');
-
--- JE-0011: Purchase PUR-2024-001
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(11, 19, 40000, 0,     'Purchases'),
-(11, 4,  3600,  0,     'Input GST CGST'),
-(11, 5,  3600,  0,     'Input GST SGST'),
-(11, 9,  0,     47200, 'Accounts Payable');
-
--- JE-0012: Purchase PUR-2024-002
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(12, 19, 15000, 0,     'Purchases'),
-(12, 4,  1350,  0,     'Input GST CGST'),
-(12, 5,  1350,  0,     'Input GST SGST'),
-(12, 9,  0,     17700, 'Accounts Payable');
-
--- JE-0013: Purchase PUR-2024-003 (inter-state)
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(13, 19, 80000, 0,     'Purchases'),
-(13, 6,  14400, 0,     'Input GST IGST'),
-(13, 9,  0,     94400, 'Accounts Payable');
-
--- JE-0014: Purchase PUR-2024-004
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(14, 19, 55000, 0,     'Purchases'),
-(14, 4,  4950,  0,     'Input GST CGST'),
-(14, 5,  4950,  0,     'Input GST SGST'),
-(14, 9,  0,     64900, 'Accounts Payable');
-
--- JE-0015: Purchase PUR-2024-005 (inter-state)
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(15, 19,  120000, 0,      'Purchases'),
-(15, 6,   21600,  0,      'Input GST IGST'),
-(15, 9,   0,      141600, 'Accounts Payable');
-
--- JE-0016: Payment received INV-2024-001
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(16, 2, 118000, 0,      'Payment received via bank'),
-(16, 3, 0,      118000, 'INV-2024-001 cleared');
-
--- JE-0017: Payment received INV-2024-002
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(17, 2, 59000, 0,     'Payment received via bank'),
-(17, 3, 0,     59000, 'INV-2024-002 cleared');
-
--- JE-0018: Payment made PUR-2024-001
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(18, 9, 47200, 0,     'PUR-2024-001 cleared'),
-(18, 2, 0,     47200, 'Payment via bank');
-
--- JE-0019: Payment received INV-2024-005
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(19, 2, 177000, 0,      'Payment received via bank'),
-(19, 3, 0,      177000, 'INV-2024-005 cleared');
-
--- JE-0020: Payment received INV-2024-008
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(20, 2, 106200, 0,      'Payment received via bank'),
-(20, 3, 0,      106200, 'INV-2024-008 cleared');
-
--- JE-0021: Salary April
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(21, 20, 80000, 0,     'Salaries April 2024'),
-(21, 2,  0,     80000, 'Bank payment');
-
--- JE-0022: Salary May
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(22, 20, 80000, 0,     'Salaries May 2024'),
-(22, 2,  0,     80000, 'Bank payment');
-
--- JE-0023: Rent Q1
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(23, 21, 90000, 0,     'Rent Q1 2024'),
-(23, 2,  0,     90000, 'Bank payment');
-
--- JE-0024: TDS 194J
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(24, 22, 50000, 0,     'Professional Fees — LegalEdge'),
-(24, 13, 0,     5000,  'TDS @ 10% u/s 194J'),
-(24, 2,  0,     45000, 'Net payment to LegalEdge');
-
--- JE-0025: TDS 194I
-INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration) VALUES
-(25, 21, 30000, 0,     'Rent — Oct 2024'),
-(25, 13, 0,     3000,  'TDS @ 10% u/s 194I'),
-(25, 2,  0,     27000, 'Net payment');
-
--- ============================================================
--- 11. TDS ENTRIES — Company 1
+-- STEP 9: TDS ENTRIES — All 3 companies
 -- ============================================================
 INSERT INTO tds_entries (company_id, party_name, party_pan, section, gross_amount, tds_rate, tds_amount, net_amount, payment_date, payment_nature, challan_no, created_by) VALUES
-(1, 'LegalEdge Associates',  'AABCL1234A', '194J', 50000, 10, 5000, 45000, '2024-07-05', 'Professional Fees',  'CHL-001', 1),
-(1, 'Property Owner Mr Shah','AABCS5678B', '194I', 30000, 10, 3000, 27000, '2024-10-10', 'Rent',               'CHL-002', 1),
-(1, 'IT Contractor Pvt Ltd', 'AABCI9012C', '194C', 80000, 2,  1600, 78400, '2024-08-15', 'Contract Services',  'CHL-003', 1),
-(1, 'Digital Agency',        'AABCD3456D', '194J', 40000, 10, 4000, 36000, '2024-11-20', 'Technical Services', 'CHL-004', 1);
+-- Kerala Spices
+(1, 'Transport Logistics Kerala', 'AABCT1234A', '194C', 50000.00, 1.00, 500.00, 49500.00, '2024-04-30', 'Freight Charges', 'CHL/2024/001', 1),
+(1, 'CA Priya Nair - Audit Fees', 'AABCP5678B', '194J', 75000.00, 10.00, 7500.00, 67500.00, '2024-06-30', 'Professional Fees', 'CHL/2024/002', 1),
+(1, 'Warehouse Rent Kozhikode', 'AABCW9012C', '194I', 120000.00, 10.00, 12000.00, 108000.00, '2024-07-31', 'Rent - Building', 'CHL/2024/003', 1),
+-- TechNova
+(2, 'Freelancer Dev Services', 'AABCF3456D', '194J', 180000.00, 10.00, 18000.00, 162000.00, '2024-04-30', 'Technical Fees', 'CHL/2024/004', 1),
+(2, 'Office Rent BKC Mumbai', 'AABCO7890E', '194I', 360000.00, 10.00, 36000.00, 324000.00, '2024-07-31', 'Rent - Commercial', 'CHL/2024/005', 1),
+(2, 'Digital Marketing Agency', 'AABCD1234F', '194C', 85000.00, 1.00, 850.00, 84150.00, '2024-06-30', 'Advertisement', 'CHL/2024/006', 1),
+-- Hyderabad Electronics
+(3, 'Security Services Hyderabad', 'AABCS5678G', '194C', 60000.00, 1.00, 600.00, 59400.00, '2024-04-30', 'Security Contract', 'CHL/2024/007', 1),
+(3, 'Office Space Hitech City', 'AABCO9012H', '194I', 420000.00, 10.00, 42000.00, 378000.00, '2024-07-31', 'Rent - Commercial', 'CHL/2024/008', 1),
+(3, 'CA Firm Audit Fees', 'AABCC3456I', '194J', 95000.00, 10.00, 9500.00, 85500.00, '2024-06-30', 'Professional Fees', 'CHL/2024/009', 1);
 
-SELECT 'FinLex Seed Data inserted successfully!' AS status;
-SELECT 'Login: fida@example.com / password123' AS login;
+-- ============================================================
+-- STEP 10: COMPLIANCE DEADLINES
+-- ============================================================
+INSERT INTO compliance_deadlines (company_id, type, name, due_date, financial_year, period, status) VALUES
+-- Kerala Spices
+(1, 'GST', 'GSTR-1 Filing - April 2024', '2024-05-11', '2024-25', 'April 2024', 'completed'),
+(1, 'GST', 'GSTR-3B Filing - April 2024', '2024-05-20', '2024-25', 'April 2024', 'completed'),
+(1, 'GST', 'GSTR-1 Filing - May 2024', '2024-06-11', '2024-25', 'May 2024', 'completed'),
+(1, 'GST', 'GSTR-3B Filing - May 2024', '2024-06-20', '2024-25', 'May 2024', 'completed'),
+(1, 'TDS', 'TDS Return Q1 FY 2024-25', '2024-07-31', '2024-25', 'Q1', 'completed'),
+(1, 'GST', 'GSTR-1 Filing - July 2024', '2024-08-11', '2024-25', 'July 2024', 'pending'),
+(1, 'GST', 'GSTR-3B Filing - July 2024', '2024-08-20', '2024-25', 'July 2024', 'pending'),
+(1, 'ADVANCE_TAX', 'Advance Tax Q2 Installment', '2024-09-15', '2024-25', 'Q2', 'pending'),
+-- TechNova
+(2, 'GST', 'GSTR-1 Filing - April 2024', '2024-05-11', '2024-25', 'April 2024', 'completed'),
+(2, 'GST', 'GSTR-3B Filing - April 2024', '2024-05-20', '2024-25', 'April 2024', 'completed'),
+(2, 'TDS', 'TDS Return Q1 FY 2024-25', '2024-07-31', '2024-25', 'Q1', 'completed'),
+(2, 'GST', 'GSTR-1 Filing - July 2024', '2024-08-11', '2024-25', 'July 2024', 'pending'),
+(2, 'ADVANCE_TAX', 'Advance Tax Q2 Installment', '2024-09-15', '2024-25', 'Q2', 'pending'),
+(2, 'ROC', 'Annual ROC Filing', '2024-09-30', '2024-25', 'Annual', 'pending'),
+-- Hyderabad Electronics
+(3, 'GST', 'GSTR-1 Filing - April 2024', '2024-05-11', '2024-25', 'April 2024', 'completed'),
+(3, 'GST', 'GSTR-3B Filing - April 2024', '2024-05-20', '2024-25', 'April 2024', 'completed'),
+(3, 'TDS', 'TDS Return Q1 FY 2024-25', '2024-07-31', '2024-25', 'Q1', 'completed'),
+(3, 'GST', 'GSTR-1 Filing - July 2024', '2024-08-11', '2024-25', 'July 2024', 'pending'),
+(3, 'ADVANCE_TAX', 'Advance Tax Q2 Installment', '2024-09-15', '2024-25', 'Q2', 'pending');
+
+-- ============================================================
+-- STEP 11: JOURNAL ENTRIES — Kerala Spices (company 1)
+-- ============================================================
+INSERT INTO journal_entries (company_id, entry_number, entry_date, reference_type, narration, is_posted, created_by) VALUES
+(1, 'JE/2024/001', '2024-04-05', 'invoice', 'Sales Invoice KST/2024/001 - Rajesh Enterprises', true, 1),
+(1, 'JE/2024/002', '2024-04-12', 'invoice', 'Sales Invoice KST/2024/002 - Mumbai Masala Pvt Ltd', true, 1),
+(1, 'JE/2024/003', '2024-04-02', 'invoice', 'Purchase Invoice PUR/KST/001 - Wayanad Spice Farm', true, 1),
+(1, 'JE/2024/004', '2024-04-30', 'payment', 'Salary payment for April 2024', true, 1),
+(1, 'JE/2024/005', '2024-04-30', 'manual', 'Monthly rent payment - Godown Kozhikode', true, 1),
+(1, 'JE/2024/006', '2024-05-20', 'payment', 'Payment received from Rajesh Enterprises - INV KST/2024/001', true, 1),
+(1, 'JE/2024/007', '2024-06-05', 'manual', 'Electricity bill payment - April-May 2024', true, 1),
+(1, 'JE/2024/008', '2024-06-30', 'payment', 'Salary payment for June 2024', true, 1);
+
+-- Journal Lines for JE/2024/001 (Sales Invoice - intrastate)
+INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration)
+SELECT je.id,
+       (SELECT id FROM accounts WHERE company_id=1 AND code='1003'), -- Accounts Receivable
+       100300.00, 0.00, 'Accounts Receivable - Rajesh Enterprises'
+FROM journal_entries je WHERE je.company_id=1 AND je.entry_number='JE/2024/001';
+
+INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration)
+SELECT je.id,
+       (SELECT id FROM accounts WHERE company_id=1 AND code='4001'), -- Sales Revenue
+       0.00, 85000.00, 'Sales Revenue'
+FROM journal_entries je WHERE je.company_id=1 AND je.entry_number='JE/2024/001';
+
+INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration)
+SELECT je.id,
+       (SELECT id FROM accounts WHERE company_id=1 AND code='2002'), -- Output CGST
+       0.00, 7650.00, 'Output CGST @ 9%'
+FROM journal_entries je WHERE je.company_id=1 AND je.entry_number='JE/2024/001';
+
+INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration)
+SELECT je.id,
+       (SELECT id FROM accounts WHERE company_id=1 AND code='2003'), -- Output SGST
+       0.00, 7650.00, 'Output SGST @ 9%'
+FROM journal_entries je WHERE je.company_id=1 AND je.entry_number='JE/2024/001';
+
+-- Journal Lines for Salary Payment JE/2024/004
+INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration)
+SELECT je.id,
+       (SELECT id FROM accounts WHERE company_id=1 AND code='5101'), -- Salaries
+       85000.00, 0.00, 'Salaries for April 2024'
+FROM journal_entries je WHERE je.company_id=1 AND je.entry_number='JE/2024/004';
+
+INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration)
+SELECT je.id,
+       (SELECT id FROM accounts WHERE company_id=1 AND code='1002'), -- Bank Account
+       0.00, 85000.00, 'Bank payment - Salaries April 2024'
+FROM journal_entries je WHERE je.company_id=1 AND je.entry_number='JE/2024/004';
+
+-- Journal Lines for Rent Payment JE/2024/005
+INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration)
+SELECT je.id,
+       (SELECT id FROM accounts WHERE company_id=1 AND code='5102'), -- Rent
+       25000.00, 0.00, 'Monthly rent - Godown Kozhikode'
+FROM journal_entries je WHERE je.company_id=1 AND je.entry_number='JE/2024/005';
+
+INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, narration)
+SELECT je.id,
+       (SELECT id FROM accounts WHERE company_id=1 AND code='1002'), -- Bank Account
+       0.00, 25000.00, 'Bank payment - Rent April 2024'
+FROM journal_entries je WHERE je.company_id=1 AND je.entry_number='JE/2024/005';
+
+-- ============================================================
+-- STEP 12: OPENING BALANCES — Kerala Spices (company 1)
+-- ============================================================
+UPDATE accounts SET opening_balance = 250000.00, balance = 250000.00 WHERE company_id = 1 AND code = '1002'; -- Bank
+UPDATE accounts SET opening_balance = 50000.00,  balance = 50000.00  WHERE company_id = 1 AND code = '1001'; -- Cash
+UPDATE accounts SET opening_balance = 350000.00, balance = 350000.00 WHERE company_id = 1 AND code = '3001'; -- Share Capital
+UPDATE accounts SET opening_balance = 120000.00, balance = 120000.00 WHERE company_id = 1 AND code = '1010'; -- Stock
+UPDATE accounts SET opening_balance = 200000.00, balance = 200000.00 WHERE company_id = 1 AND code = '2101'; -- Bank Loan
+
+-- Opening Balances — TechNova (company 2)
+UPDATE accounts SET opening_balance = 850000.00, balance = 850000.00 WHERE company_id = 2 AND code = '1002'; -- Bank
+UPDATE accounts SET opening_balance = 25000.00,  balance = 25000.00  WHERE company_id = 2 AND code = '1001'; -- Cash
+UPDATE accounts SET opening_balance = 1000000.00,balance = 1000000.00 WHERE company_id = 2 AND code = '3001'; -- Share Capital
+UPDATE accounts SET opening_balance = 500000.00, balance = 500000.00 WHERE company_id = 2 AND code = '2101'; -- Bank Loan
+
+-- Opening Balances — Hyderabad Electronics (company 3)
+UPDATE accounts SET opening_balance = 1200000.00,balance = 1200000.00 WHERE company_id = 3 AND code = '1002'; -- Bank
+UPDATE accounts SET opening_balance = 80000.00,  balance = 80000.00  WHERE company_id = 3 AND code = '1001'; -- Cash
+UPDATE accounts SET opening_balance = 2000000.00,balance = 2000000.00 WHERE company_id = 3 AND code = '3001'; -- Share Capital
+UPDATE accounts SET opening_balance = 800000.00, balance = 800000.00 WHERE company_id = 3 AND code = '1010'; -- Stock
+
+-- ============================================================
+-- STEP 13: AUDIT LOG ENTRIES
+-- ============================================================
+INSERT INTO audit_log (company_id, user_id, action, table_name, record_id, new_values) VALUES
+(1, 1, 'CREATE', 'invoices', 1, '{"invoice_number": "KST/2024/001", "total_amount": 100300}'),
+(1, 1, 'CREATE', 'invoices', 2, '{"invoice_number": "KST/2024/002", "total_amount": 141600}'),
+(1, 1, 'UPDATE', 'invoices', 1, '{"payment_status": "paid"}'),
+(2, 1, 'CREATE', 'invoices', 9, '{"invoice_number": "TNS/2024/001", "total_amount": 295000}'),
+(2, 1, 'CREATE', 'tds_entries', 4, '{"party_name": "Freelancer Dev Services", "tds_amount": 18000}'),
+(3, 1, 'CREATE', 'invoices', 15, '{"invoice_number": "HEL/2024/001", "total_amount": 413000}'),
+(3, 1, 'UPDATE', 'invoices', 15, '{"payment_status": "paid"}');
+
+-- ============================================================
+-- DONE!
+-- ============================================================
+SELECT '✅ FinLex Demo Seed Data loaded successfully!' AS status;
+SELECT 'Login: arjun@menon-ca.com | Password: Demo@1234' AS credentials;
