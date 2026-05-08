@@ -3,6 +3,10 @@ node_modules/
 venv/
 __pycache__/
 
+# Python
+*.pyc
+*.pyo
+
 # Environment files
 .env
 .env.local
@@ -10,6 +14,8 @@ __pycache__/
 # Build files
 dist/
 build/
+.next/
+coverage/
 *.log
 
 # Database

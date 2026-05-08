@@ -28,14 +28,19 @@ async function getCompanyContext(company_id) {
     const net_profit = total_revenue - total_expense
 
     const { rows: gstRows } = await pool.query(
-      `SELECT invoice_type,COUNT(*) as count,
-              COALESCE(SUM(cgst_amount),0) as cgst,
-              COALESCE(SUM(sgst_amount),0) as sgst,
-              COALESCE(SUM(igst_amount),0) as igst
-       FROM invoices WHERE company_id=$1 AND status!='cancelled'
-         AND EXTRACT(MONTH FROM invoice_date)=$2::numeric AND EXTRACT(YEAR FROM invoice_date)=$3::numeric`,
-      [company_id, month, year]
-    )
+      `SELECT invoice_type,
+          COUNT(*) as count,
+          COALESCE(SUM(cgst_amount),0) as cgst,
+          COALESCE(SUM(sgst_amount),0) as sgst,
+          COALESCE(SUM(igst_amount),0) as igst
+   FROM invoices
+   WHERE company_id=$1
+     AND status!='cancelled'
+     AND EXTRACT(MONTH FROM invoice_date)=$2::numeric
+     AND EXTRACT(YEAR FROM invoice_date)=$3::numeric
+   GROUP BY invoice_type`,
+  [company_id, month, year]
+)
     const sales = gstRows.find(r => r.invoice_type === 'sale') || {}
     const output_tax = parseFloat(sales.cgst || 0) + parseFloat(sales.sgst || 0) + parseFloat(sales.igst || 0)
 

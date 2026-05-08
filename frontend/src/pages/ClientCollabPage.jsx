@@ -84,27 +84,121 @@ const QUICK_TEMPLATES = [
   },
 ]
 
-const s = {
-  page: { fontFamily: 'var(--font-body,DM Sans,sans-serif)' },
-  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 },
-  title: { fontSize: 22, fontWeight: 700, color: 'var(--white,#fff)', margin: 0 },
-  sub:   { fontSize: 14, color: 'rgba(255,255,255,0.5)', marginTop: 4 },
-  btn: (variant='gold') => ({
-    display: 'inline-flex', alignItems: 'center', gap: 7,
-    padding: '9px 18px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-    cursor: 'pointer', border: 'none', transition: 'opacity 0.2s',
-    background: variant === 'gold' ? 'linear-gradient(135deg,#E8C97A,#C9A84C)' : variant === 'outline' ? 'transparent' : 'rgba(255,255,255,0.06)',
-    color: variant === 'gold' ? '#0B1E3D' : '#fff',
-    ...(variant === 'outline' ? { border: '1px solid rgba(255,255,255,0.15)' } : {}),
+// LIGHT THEME STYLES (matching Credit Notes page)
+const styles = {
+  page: { 
+    padding: '24px',
+    background: 'var(--gray-50)',
+    minHeight: '100vh',
+    fontFamily: 'var(--font-body, DM Sans, sans-serif)',
+    animation: 'fadeUp 0.5s ease'
+  },
+  card: { 
+    background: 'var(--white)', 
+    borderRadius: 16, 
+    padding: 24, 
+    border: '1px solid var(--gray-100)', 
+    boxShadow: '0 1px 8px rgba(0,0,0,0.04)' 
+  },
+  primaryBtn: { 
+    display: 'flex', 
+    alignItems: 'center', 
+    gap: 6, 
+    padding: '10px 18px', 
+    borderRadius: 10, 
+    border: 'none', 
+    background: 'linear-gradient(135deg, #C9A84C, #e2c06e)', 
+    color: 'var(--navy)', 
+    fontSize: 13, 
+    fontWeight: 700, 
+    cursor: 'pointer', 
+    fontFamily: 'var(--font-body)' 
+  },
+  ghostBtn: { 
+    display: 'flex', 
+    alignItems: 'center', 
+    gap: 6, 
+    padding: '8px 14px', 
+    borderRadius: 9, 
+    border: '1.5px solid var(--gray-200)', 
+    background: 'var(--white)', 
+    color: 'var(--gray-600)', 
+    fontSize: 13, 
+    cursor: 'pointer', 
+    fontFamily: 'var(--font-body)' 
+  },
+  input: { 
+    width: '100%', 
+    padding: '9px 12px', 
+    borderRadius: 9, 
+    border: '1.5px solid var(--gray-200)', 
+    fontSize: 13, 
+    fontFamily: 'var(--font-body)', 
+    outline: 'none', 
+    boxSizing: 'border-box', 
+    background: 'var(--white)', 
+    color: 'var(--navy)' 
+  },
+  label: { 
+    display: 'block', 
+    fontSize: 11, 
+    fontWeight: 600, 
+    color: 'var(--gray-400)', 
+    marginBottom: 4, 
+    textTransform: 'uppercase', 
+    letterSpacing: '0.5px' 
+  },
+  overlay: { 
+    position: 'fixed', 
+    inset: 0, 
+    background: 'rgba(0,0,0,0.45)', 
+    display: 'flex', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    zIndex: 1000, 
+    backdropFilter: 'blur(4px)' 
+  },
+  modal: { 
+    background: 'var(--white)', 
+    borderRadius: 20, 
+    padding: 28, 
+    width: '90%', 
+    maxWidth: 600, 
+    maxHeight: '90vh', 
+    overflowY: 'auto', 
+    boxShadow: '0 20px 60px rgba(0,0,0,0.2)' 
+  },
+  modalHeader: { 
+    display: 'flex', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 24 
+  },
+  closeBtn: { 
+    background: 'none', 
+    border: 'none', 
+    cursor: 'pointer', 
+    color: 'var(--gray-400)', 
+    padding: 4 
+  },
+  badge: (color, bg) => ({ 
+    display: 'inline-flex', 
+    alignItems: 'center', 
+    padding: '3px 10px', 
+    borderRadius: 100, 
+    fontSize: 11, 
+    fontWeight: 600, 
+    color, 
+    background: bg 
   }),
-  card: { background: 'var(--navy-surface,#0F2444)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: 20, marginBottom: 14, cursor: 'pointer', transition: 'border-color 0.2s' },
-  badge: (color, bg) => ({ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 100, fontSize: 11, fontWeight: 600, color, background: bg }),
-  input: { width: '100%', padding: '10px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#fff', fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' },
-  label: { display: 'block', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.5)', marginBottom: 6, letterSpacing: '0.5px', textTransform: 'uppercase' },
-  modal: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 },
-  modalBox: { background: '#0B1E3D', border: '1px solid rgba(201,168,76,0.25)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 600, maxHeight: '90vh', overflowY: 'auto' },
-  divider: { height: 1, background: 'rgba(255,255,255,0.06)', margin: '20px 0' },
-  statCard: { background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '14px 18px', flex: 1, minWidth: 100 },
+  statCard: { 
+    background: 'var(--white)', 
+    borderRadius: 10, 
+    padding: '14px 18px', 
+    flex: 1, 
+    minWidth: 100,
+    border: '1px solid var(--gray-100)'
+  },
 }
 
 export default function ClientCollabPage() {
@@ -241,22 +335,22 @@ export default function ClientCollabPage() {
   ]
 
   return (
-    <div style={s.page}>
-
+    <div style={styles.page}>
       {/* Header */}
-      <div style={s.header}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
         <div>
-          <h1 style={s.title}>Client Collaboration</h1>
-          <p style={s.sub}>Request, track, and manage documents from clients</p>
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 700, color: 'var(--navy)', marginBottom: 4 }}>
+            Client Collaboration
+          </h1>
+          <p style={{ color: 'var(--gray-600)', fontSize: 15 }}>Request, track, and manage documents from clients</p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-
           {/* Company selector */}
           {companies.length > 1 && (
             <select
               value={companyId || ''}
               onChange={e => setCompanyId(Number(e.target.value))}
-              style={{ ...s.input, width: 200 }}
+              style={{ ...styles.input, width: 200 }}
             >
               {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -264,7 +358,7 @@ export default function ClientCollabPage() {
 
           {/* Notifications bell */}
           <div style={{ position: 'relative' }}>
-            <button style={{ ...s.btn('outline'), position: 'relative' }} onClick={() => { setShowNotifs(!showNotifs); if (notifications.length) markNotifsRead() }}>
+            <button style={{ ...styles.ghostBtn, position: 'relative' }} onClick={() => { setShowNotifs(!showNotifs); if (notifications.length) markNotifsRead() }}>
               <Bell size={15} />
               {notifications.length > 0 && (
                 <span style={{ position: 'absolute', top: -4, right: -4, width: 16, height: 16, background: '#E24B4A', borderRadius: '50%', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
@@ -273,13 +367,13 @@ export default function ClientCollabPage() {
               )}
             </button>
             {showNotifs && (
-              <div style={{ position: 'absolute', right: 0, top: 44, width: 320, background: '#0B1E3D', border: '1px solid rgba(201,168,76,0.2)', borderRadius: 12, padding: 16, zIndex: 50 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#C9A84C', marginBottom: 12 }}>Notifications</div>
+              <div style={{ position: 'absolute', right: 0, top: 44, width: 320, background: 'var(--white)', border: '1px solid var(--gray-200)', borderRadius: 12, padding: 16, zIndex: 50, boxShadow: '0 10px 40px rgba(0,0,0,0.1)' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy)', marginBottom: 12 }}>Notifications</div>
                 {notifications.length === 0
-                  ? <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', textAlign: 'center', padding: '12px 0' }}>All caught up</div>
+                  ? <div style={{ fontSize: 13, color: 'var(--gray-400)', textAlign: 'center', padding: '12px 0' }}>All caught up</div>
                   : notifications.map(n => (
-                    <div key={n.id} style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', lineHeight: 1.5 }}>
-                      <span style={{ color: '#C9A84C', fontWeight: 600 }}>{n.request_title}</span><br />{n.message}
+                    <div key={n.id} style={{ fontSize: 12, color: 'var(--gray-600)', padding: '8px 0', borderBottom: '1px solid var(--gray-100)', lineHeight: 1.5 }}>
+                      <span style={{ color: 'var(--gold)', fontWeight: 600 }}>{n.request_title}</span><br />{n.message}
                     </div>
                   ))
                 }
@@ -287,7 +381,7 @@ export default function ClientCollabPage() {
             )}
           </div>
 
-          <button style={s.btn('gold')} onClick={() => setShowCreate(true)}>
+          <button style={styles.primaryBtn} onClick={() => setShowCreate(true)}>
             <Plus size={15} /> New Request
           </button>
         </div>
@@ -304,22 +398,22 @@ export default function ClientCollabPage() {
             { label: 'Docs Pending', val: summary.pending_docs, color: '#888780' },
             { label: 'Docs Approved', val: summary.approved_docs, color: '#5DCAA5' },
           ].map(item => (
-            <div key={item.label} style={s.statCard}>
+            <div key={item.label} style={styles.statCard}>
               <div style={{ fontSize: 22, fontWeight: 700, color: item.color }}>{item.val || 0}</div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{item.label}</div>
+              <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 2 }}>{item.label}</div>
             </div>
           ))}
         </div>
       )}
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 0 }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--gray-200)', paddingBottom: 0 }}>
         {tabs.map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
             padding: '8px 18px', border: 'none', background: 'transparent',
-            color: activeTab === t.key ? '#C9A84C' : 'rgba(255,255,255,0.4)',
-            fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-            borderBottom: activeTab === t.key ? '2px solid #C9A84C' : '2px solid transparent',
+            color: activeTab === t.key ? 'var(--navy)' : 'var(--gray-500)',
+            fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            borderBottom: activeTab === t.key ? '2px solid var(--gold)' : '2px solid transparent',
             marginBottom: -1,
           }}>{t.label}</button>
         ))}
@@ -330,9 +424,9 @@ export default function ClientCollabPage() {
 
         {/* Request list */}
         <div>
-          {loading && <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, padding: 20, textAlign: 'center' }}>Loading...</div>}
+          {loading && <div style={{ color: 'var(--gray-400)', fontSize: 13, padding: 20, textAlign: 'center' }}>Loading...</div>}
           {!loading && filtered.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '48px 20px', color: 'rgba(255,255,255,0.3)' }}>
+            <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--gray-400)' }}>
               <FolderOpen size={40} style={{ marginBottom: 12, opacity: 0.3 }} />
               <div style={{ fontSize: 14 }}>No requests yet</div>
               <div style={{ fontSize: 12, marginTop: 6 }}>Create your first document request</div>
@@ -348,20 +442,26 @@ export default function ClientCollabPage() {
             return (
               <div key={r.id}
                 onClick={() => { setSelected(null); loadSelected(r.id) }}
-                style={{ ...s.card, borderColor: isActive ? 'rgba(201,168,76,0.4)' : 'rgba(255,255,255,0.08)' }}
+                style={{ 
+                  ...styles.card, 
+                  borderColor: isActive ? 'var(--gold)' : 'var(--gray-100)',
+                  cursor: 'pointer',
+                  marginBottom: 14,
+                  transition: 'border-color 0.2s'
+                }}
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', flex: 1 }}>{r.title}</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy)', flex: 1 }}>{r.title}</div>
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                    <span style={s.badge(prio.color, prio.bg)}>{prio.label}</span>
-                    <span style={s.badge(stat.color, stat.bg)}>{stat.label}</span>
+                    <span style={styles.badge(prio.color, prio.bg)}>{prio.label}</span>
+                    <span style={styles.badge(stat.color, stat.bg)}>{stat.label}</span>
                   </div>
                 </div>
 
-                {r.period && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}><Tag size={10} style={{ marginRight: 4 }} />{r.period}</div>}
+                {r.period && <div style={{ fontSize: 11, color: 'var(--gray-400)', marginBottom: 8 }}><Tag size={10} style={{ marginRight: 4 }} />{r.period}</div>}
 
                 {r.due_date && (
-                  <div style={{ fontSize: 11, color: new Date(r.due_date) < new Date() && r.status !== 'completed' ? '#E24B4A' : 'rgba(255,255,255,0.4)', marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: new Date(r.due_date) < new Date() && r.status !== 'completed' ? '#E24B4A' : 'var(--gray-400)', marginBottom: 10 }}>
                     <Calendar size={10} style={{ marginRight: 4 }} />Due: {new Date(r.due_date).toLocaleDateString('en-IN')}
                   </div>
                 )}
@@ -369,17 +469,17 @@ export default function ClientCollabPage() {
                 {/* Progress bar */}
                 {parseInt(r.total_items) > 0 && (
                   <div style={{ marginBottom: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--gray-400)', marginBottom: 4 }}>
                       <span>{r.approved_items}/{r.total_items} docs approved</span>
                       <span>{progress}%</span>
                     </div>
-                    <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 10, overflow: 'hidden' }}>
+                    <div style={{ height: 4, background: 'var(--gray-100)', borderRadius: 10, overflow: 'hidden' }}>
                       <div style={{ height: '100%', width: `${progress}%`, background: 'linear-gradient(90deg,#9A7A35,#C9A84C)', borderRadius: 10, transition: 'width 0.4s' }} />
                     </div>
                   </div>
                 )}
 
-                <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
+                <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--gray-400)' }}>
                   <span><FileText size={10} style={{ marginRight: 3 }} />{r.total_items} items</span>
                   {parseInt(r.pending_items) > 0 && <span style={{ color: '#F0997B' }}><Clock size={10} style={{ marginRight: 3 }} />{r.pending_items} pending</span>}
                   {parseInt(r.uploaded_items) > 0 && <span style={{ color: '#378ADD' }}><Upload size={10} style={{ marginRight: 3 }} />{r.uploaded_items} uploaded</span>}
@@ -391,25 +491,24 @@ export default function ClientCollabPage() {
 
         {/* Detail panel */}
         {selected && (
-          <div style={{ background: 'var(--navy-surface,#0F2444)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 24, maxHeight: '80vh', overflowY: 'auto' }}>
-
+          <div style={{ ...styles.card, maxHeight: '80vh', overflowY: 'auto' }}>
             {/* Detail header */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}>{selected.title}</div>
-                {selected.period && <div style={{ fontSize: 12, color: '#C9A84C' }}>{selected.period}</div>}
-                {selected.description && <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 6, lineHeight: 1.5 }}>{selected.description}</div>}
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--navy)', marginBottom: 4 }}>{selected.title}</div>
+                {selected.period && <div style={{ fontSize: 12, color: 'var(--gold)' }}>{selected.period}</div>}
+                {selected.description && <div style={{ fontSize: 13, color: 'var(--gray-600)', marginTop: 6, lineHeight: 1.5 }}>{selected.description}</div>}
               </div>
               <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                <button onClick={() => deleteRequest(selected.id)} style={{ ...s.btn('outline'), padding: '6px 10px' }}><Trash2 size={13} /></button>
-                <button onClick={() => setSelected(null)} style={{ ...s.btn('outline'), padding: '6px 10px' }}><X size={13} /></button>
+                <button onClick={() => deleteRequest(selected.id)} style={{ ...styles.ghostBtn, padding: '6px 10px' }}><Trash2 size={13} /></button>
+                <button onClick={() => setSelected(null)} style={{ ...styles.ghostBtn, padding: '6px 10px' }}><X size={13} /></button>
               </div>
             </div>
 
-            <div style={s.divider} />
+            <div style={{ height: 1, background: 'var(--gray-100)', margin: '20px 0' }} />
 
             {/* Checklist items */}
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-400)', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 12 }}>
               Document Checklist
             </div>
 
@@ -417,17 +516,17 @@ export default function ClientCollabPage() {
               const ist = ITEM_STATUS[item.status] || ITEM_STATUS.pending
               const IstIcon = ist.icon
               return (
-                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, marginBottom: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--gray-50)', borderRadius: 8, marginBottom: 8, border: '1px solid var(--gray-100)' }}>
                   <IstIcon size={15} style={{ color: ist.color, flexShrink: 0 }} />
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, color: '#fff', fontWeight: 500 }}>{item.document_name}</div>
+                    <div style={{ fontSize: 13, color: 'var(--navy)', fontWeight: 500 }}>{item.document_name}</div>
                     {item.document_type && item.document_type !== 'other' && (
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 1 }}>{DOC_TYPES.find(d => d.value === item.document_type)?.label || item.document_type}</div>
+                      <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 1 }}>{DOC_TYPES.find(d => d.value === item.document_type)?.label || item.document_type}</div>
                     )}
                     {item.notes && <div style={{ fontSize: 11, color: '#F0997B', marginTop: 2 }}>{item.notes}</div>}
                     {item.file_name && <div style={{ fontSize: 11, color: '#378ADD', marginTop: 2 }}>{item.file_name}</div>}
                   </div>
-                  {!item.is_required && <span style={s.badge('rgba(255,255,255,0.3)', 'rgba(255,255,255,0.05)')}>Optional</span>}
+                  {!item.is_required && <span style={styles.badge('var(--gray-400)', 'var(--gray-100)')}>Optional</span>}
                   {/* Action buttons based on current status */}
                   <div style={{ display: 'flex', gap: 4 }}>
                     {item.status === 'uploaded' && (
@@ -440,7 +539,7 @@ export default function ClientCollabPage() {
                       <button onClick={() => updateItemStatus(item.id, 'uploaded')} style={{ padding: '4px 10px', background: 'rgba(55,138,221,0.12)', border: '1px solid rgba(55,138,221,0.3)', color: '#378ADD', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Mark Uploaded</button>
                     )}
                     {item.status === 'rejected' && (
-                      <button onClick={() => updateItemStatus(item.id, 'pending')} style={{ padding: '4px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}>Reset</button>
+                      <button onClick={() => updateItemStatus(item.id, 'pending')} style={{ padding: '4px 10px', background: 'var(--gray-100)', border: '1px solid var(--gray-200)', color: 'var(--gray-600)', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}>Reset</button>
                     )}
                   </div>
                 </div>
@@ -448,27 +547,27 @@ export default function ClientCollabPage() {
             })}
 
             {selected.items?.length === 0 && (
-              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: '16px 0' }}>No checklist items yet</div>
+              <div style={{ fontSize: 13, color: 'var(--gray-400)', textAlign: 'center', padding: '16px 0' }}>No checklist items yet</div>
             )}
 
-            <div style={s.divider} />
+            <div style={{ height: 1, background: 'var(--gray-100)', margin: '20px 0' }} />
 
             {/* Comments / thread */}
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-400)', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 12 }}>
               <MessageSquare size={12} style={{ marginRight: 4 }} />Thread
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
               {selected.comments?.length === 0 && (
-                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: '12px 0' }}>No comments yet</div>
+                <div style={{ fontSize: 13, color: 'var(--gray-400)', textAlign: 'center', padding: '12px 0' }}>No comments yet</div>
               )}
               {selected.comments?.map(c => (
-                <div key={c.id} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 8, padding: '10px 14px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div key={c.id} style={{ background: 'var(--gray-50)', borderRadius: 8, padding: '10px 14px', border: '1px solid var(--gray-100)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: '#C9A84C' }}>{c.user_name || 'CA'}</span>
-                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{new Date(c.created_at).toLocaleDateString('en-IN')}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gold)' }}>{c.user_name || 'CA'}</span>
+                    <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>{new Date(c.created_at).toLocaleDateString('en-IN')}</span>
                   </div>
-                  <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', lineHeight: 1.5 }}>{c.message}</div>
+                  <div style={{ fontSize: 13, color: 'var(--gray-600)', lineHeight: 1.5 }}>{c.message}</div>
                 </div>
               ))}
             </div>
@@ -480,9 +579,9 @@ export default function ClientCollabPage() {
                 onChange={e => setComment(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendComment()}
                 placeholder="Add a note or message..."
-                style={{ ...s.input, flex: 1 }}
+                style={{ ...styles.input, flex: 1 }}
               />
-              <button onClick={sendComment} style={{ ...s.btn('gold'), padding: '9px 14px' }}><Send size={14} /></button>
+              <button onClick={sendComment} style={styles.primaryBtn}><Send size={14} /></button>
             </div>
           </div>
         )}
@@ -490,43 +589,45 @@ export default function ClientCollabPage() {
 
       {/* CREATE MODAL */}
       {showCreate && (
-        <div style={s.modal} onClick={e => e.target === e.currentTarget && setShowCreate(false)}>
-          <div style={s.modalBox}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>New Document Request</div>
-              <button onClick={() => setShowCreate(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}><X size={18} /></button>
+        <div style={styles.overlay} onClick={e => e.target === e.currentTarget && setShowCreate(false)}>
+          <div style={styles.modal}>
+            <div style={styles.modalHeader}>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, color: 'var(--navy)' }}>
+                New Document Request
+              </span>
+              <button onClick={() => setShowCreate(false)} style={styles.closeBtn}><X size={18} /></button>
             </div>
 
             {/* Quick templates */}
             <div style={{ marginBottom: 20 }}>
-              <label style={s.label}>Quick Templates</label>
+              <label style={styles.label}>Quick Templates</label>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {QUICK_TEMPLATES.map(tpl => (
-                  <button key={tpl.title} onClick={() => applyTemplate(tpl)} style={{ ...s.btn('outline'), fontSize: 12, padding: '6px 12px' }}>
+                  <button key={tpl.title} onClick={() => applyTemplate(tpl)} style={{ ...styles.ghostBtn, fontSize: 12, padding: '6px 12px' }}>
                     {tpl.title}
                   </button>
                 ))}
               </div>
             </div>
 
-            <div style={s.divider} />
+            <div style={{ height: 1, background: 'var(--gray-100)', margin: '20px 0' }} />
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
               <div style={{ gridColumn: '1/-1' }}>
-                <label style={s.label}>Request Title *</label>
-                <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. March 2025 GST Documents" style={s.input} />
+                <label style={styles.label}>Request Title *</label>
+                <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. March 2025 GST Documents" style={styles.input} />
               </div>
               <div>
-                <label style={s.label}>Period</label>
-                <input value={form.period} onChange={e => setForm(f => ({ ...f, period: e.target.value }))} placeholder="e.g. March 2025" style={s.input} />
+                <label style={styles.label}>Period</label>
+                <input value={form.period} onChange={e => setForm(f => ({ ...f, period: e.target.value }))} placeholder="e.g. March 2025" style={styles.input} />
               </div>
               <div>
-                <label style={s.label}>Due Date</label>
-                <input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} style={s.input} />
+                <label style={styles.label}>Due Date</label>
+                <input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} style={styles.input} />
               </div>
               <div>
-                <label style={s.label}>Priority</label>
-                <select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))} style={s.input}>
+                <label style={styles.label}>Priority</label>
+                <select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))} style={styles.input}>
                   <option value="low">Low</option>
                   <option value="normal">Normal</option>
                   <option value="high">High</option>
@@ -534,22 +635,22 @@ export default function ClientCollabPage() {
                 </select>
               </div>
               <div style={{ gridColumn: '1/-1' }}>
-                <label style={s.label}>Description (optional)</label>
-                <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Any notes for the client..." rows={2} style={{ ...s.input, resize: 'vertical' }} />
+                <label style={styles.label}>Description (optional)</label>
+                <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Any notes for the client..." rows={2} style={{ ...styles.input, resize: 'vertical' }} />
               </div>
             </div>
 
-            <div style={s.divider} />
+            <div style={{ height: 1, background: 'var(--gray-100)', margin: '20px 0' }} />
 
             {/* Checklist items */}
-            <label style={s.label}>Document Checklist</label>
+            <label style={styles.label}>Document Checklist</label>
 
             {form.items.map((item, idx) => (
-              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '8px 12px', background: 'var(--gray-50)', borderRadius: 8 }}>
                 <CheckCircle size={13} style={{ color: '#5DCAA5', flexShrink: 0 }} />
-                <span style={{ flex: 1, fontSize: 13, color: '#fff' }}>{item.document_name}</span>
-                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>{DOC_TYPES.find(d => d.value === item.document_type)?.label}</span>
-                <button onClick={() => removeFormItem(idx)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer' }}><X size={13} /></button>
+                <span style={{ flex: 1, fontSize: 13, color: 'var(--navy)' }}>{item.document_name}</span>
+                <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>{DOC_TYPES.find(d => d.value === item.document_type)?.label}</span>
+                <button onClick={() => removeFormItem(idx)} style={{ background: 'none', border: 'none', color: 'var(--gray-400)', cursor: 'pointer' }}><X size={13} /></button>
               </div>
             ))}
 
@@ -559,17 +660,17 @@ export default function ClientCollabPage() {
                 onChange={e => setNewItem(n => ({ ...n, document_name: e.target.value }))}
                 onKeyDown={e => e.key === 'Enter' && addItem()}
                 placeholder="Add document name..."
-                style={{ ...s.input, flex: 1 }}
+                style={{ ...styles.input, flex: 1 }}
               />
-              <select value={newItem.document_type} onChange={e => setNewItem(n => ({ ...n, document_type: e.target.value }))} style={{ ...s.input, width: 150 }}>
+              <select value={newItem.document_type} onChange={e => setNewItem(n => ({ ...n, document_type: e.target.value }))} style={{ ...styles.input, width: 150 }}>
                 {DOC_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
               </select>
-              <button onClick={addItem} style={{ ...s.btn('outline'), padding: '8px 14px' }}><Plus size={14} /></button>
+              <button onClick={addItem} style={{ ...styles.ghostBtn, padding: '8px 14px' }}><Plus size={14} /></button>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24 }}>
-              <button onClick={() => setShowCreate(false)} style={s.btn('outline')}>Cancel</button>
-              <button onClick={handleCreate} style={s.btn('gold')}><Plus size={14} /> Create Request</button>
+              <button onClick={() => setShowCreate(false)} style={styles.ghostBtn}>Cancel</button>
+              <button onClick={handleCreate} style={styles.primaryBtn}><Plus size={14} /> Create Request</button>
             </div>
           </div>
         </div>

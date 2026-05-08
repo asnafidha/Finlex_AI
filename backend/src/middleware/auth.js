@@ -3,17 +3,16 @@ const jwt = require('jsonwebtoken')
 module.exports = (req, res, next) => {
   let token = null
   
-  // ✅ PRIORITY 1: Check HttpOnly cookie first (for web browsers)
-  if (req.cookies && req.cookies.token) {
-    token = req.cookies.token
-  }
-  
-  // ✅ PRIORITY 2: Fallback to Authorization header (for mobile apps / API clients)
-  if (!token && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+  // ✅ PRIORITY 1: Check Authorization header (Bearer token)
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
     token = req.headers.authorization.split(' ')[1]
   }
   
-  // ❌ No token found in either location
+  // ✅ PRIORITY 2: Fallback to HttpOnly cookie
+  if (!token && req.cookies && req.cookies.token) {
+    token = req.cookies.token
+  }
+  
   if (!token) {
     return res.status(401).json({ error: 'No token provided' })
   }

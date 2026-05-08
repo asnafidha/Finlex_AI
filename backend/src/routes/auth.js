@@ -63,7 +63,7 @@ router.post('/login', async (req, res) => {
     
     const { password_hash, ...user } = rows[0]
     // ✅ DON'T send token in JSON body
-    res.json({ user }) // No token field!
+    res.json({ user, token }) // No token field!
   } catch (err) { 
     res.status(500).json({ error: err.message }) 
   }
