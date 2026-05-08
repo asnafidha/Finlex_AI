@@ -1,0 +1,45 @@
+{
+  "ITR": {
+    "ITR4": {
+      "PartA_GEN1": {
+        "PersonalInfo": {
+          "AssesseeName": "Rahul Exports Pvt Ltd",
+          "PAN": "AABCR1234A",
+          "AY": "202425"
+        }
+      },
+      "ScheduleBP": {
+        "GrossReceipt": 1305000,
+        "GrossProfit": 581000,
+        "Expenses": 724000,
+        "NetProfit": 581000
+      },
+      "TaxComputation": {
+        "TotalIncome": 581000,
+        "IncomeTax": 14050,
+        "Rebate87A": 14050,
+        "TaxAfterRebate": 0,
+        "Surcharge": 0,
+        "HealthEducationCess": 0,
+        "TotalTaxAndCess": 0
+      },
+      "ScheduleTDS": {
+        "TDSonSalary": 0,
+        "TDSonOtherIncome": 0
+      },
+      "ScheduleIT": {
+        "AdvanceTax": 0
+      },
+      "TaxPaid": {
+        "TaxDeductedAtSource": 0,
+        "AdvanceTaxPaid": 0,
+        "SelfAssessmentTax": 0,
+        "TotalTaxPaid": 0
+      },
+      "Refund": {
+        "RefundDue": 0
+      },
+      "TaxPayable": 0
+    }
+  }
+}
