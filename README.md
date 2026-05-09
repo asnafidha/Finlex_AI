@@ -76,7 +76,7 @@ bashnpm start
 bashcd frontend && npm install && npm run dev
 Open http://localhost:5173
 5. Demo login
-Email:    arjun@menon-ca.com
+Email:    fida@example.com
 Password: Demo@1234
 
 🗂️ Demo Data Includes
